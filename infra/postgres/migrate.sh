@@ -22,8 +22,8 @@ for file in /migrations/*.sql; do
   [ -e "$file" ] || continue
   name=$(basename "$file")
 
-  applied=$(psql -X -tA -v ON_ERROR_STOP=1 -v name="$name" \
-    -c "SELECT 1 FROM public.schema_migrations WHERE filename = :'name'")
+  applied=$(psql -X -tA -v ON_ERROR_STOP=1 \
+    -c "SELECT 1 FROM public.schema_migrations WHERE filename = '$name'")
 
   if [ -n "$applied" ]; then
     echo "skip ${name} (already applied)"
@@ -32,8 +32,8 @@ for file in /migrations/*.sql; do
 
   echo "apply ${name}"
   psql -X -v ON_ERROR_STOP=1 -1 -f "$file"
-  psql -X -v ON_ERROR_STOP=1 -v name="$name" \
-    -c "INSERT INTO public.schema_migrations (filename) VALUES (:'name')"
+  psql -X -v ON_ERROR_STOP=1 \
+    -c "INSERT INTO public.schema_migrations (filename) VALUES ('$name')"
 done
 
 echo "migrations up to date"

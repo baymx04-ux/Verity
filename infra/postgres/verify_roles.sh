@@ -23,17 +23,17 @@ cleanup() {
 trap cleanup EXIT
 
 super() {
-  psql -X -tA -v ON_ERROR_STOP=1 -c "$1"
+  psql -X -q -tA -v ON_ERROR_STOP=1 -c "$1"
 }
 
 as_app() {
   PGUSER="$APP_USER" PGPASSWORD="$APP_PASSWORD" \
-    psql -X -tA -v ON_ERROR_STOP=1 -c "$1"
+    psql -X -q -tA -v ON_ERROR_STOP=1 -c "$1"
 }
 
 as_ro() {
   PGUSER="$RO_USER" PGPASSWORD="$RO_PASSWORD" \
-    psql -X -tA -v ON_ERROR_STOP=1 -c "$1"
+    psql -X -q -tA -v ON_ERROR_STOP=1 -c "$1"
 }
 
 expect() {

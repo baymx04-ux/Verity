@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Creates the two least-privilege database roles and their grants.
 # Runs once, as the Postgres superuser, on a fresh data volume.
 set -euo pipefail
