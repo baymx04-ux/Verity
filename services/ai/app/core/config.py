@@ -1,0 +1,60 @@
+from functools import lru_cache
+from urllib.parse import quote
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Environment-backed settings for the AI service."""
+
+    model_config = SettingsConfigDict(
+        env_file=("../../.env", ".env"),
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    app_name: str = "verity-ai"
+    environment: str = "development"
+    log_level: str = "info"
+
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_db: str = "verity"
+    verity_app_user: str = "verity_app"
+    verity_app_password: SecretStr
+
+    redis_url: str = "redis://localhost:6379"
+
+    minio_endpoint: str = "localhost"
+    minio_port: int = 9000
+    minio_use_ssl: bool = False
+    minio_access_key: str = ""
+    minio_secret_key: SecretStr = SecretStr("")
+    minio_bucket: str = "verity-docs"
+
+    @property
+    def database_url(self) -> str:
+        user = quote(self.verity_app_user, safe="")
+        password = quote(self.verity_app_password.get_secret_value(), safe="")
+        return (
+            f"postgresql://{user}:{password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    @property
+    def minio_url(self) -> str:
+        scheme = "https" if self.minio_use_ssl else "http"
+        return f"{scheme}://{self.minio_endpoint}:{self.minio_port}"
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return a cached settings instance for the service process."""
+
+    return Settings()

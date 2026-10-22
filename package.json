@@ -1,0 +1,27 @@
+{
+  "name": "verity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verity — a RAG-powered enterprise knowledge base with a text-to-SQL layer",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @verity/web",
+    "dev:api": "npm run dev --workspace @verity/api",
+    "build": "npm run build --workspace @verity/web && npm run build --workspace @verity/api",
+    "test": "npm run test --workspace @verity/web && npm run test --workspace @verity/api",
+    "lint": "npm run lint --workspace @verity/web && npm run lint --workspace @verity/api",
+    "typecheck": "npm run typecheck --workspace @verity/web && npm run typecheck --workspace @verity/api",
+    "seed:demo": "npm run seed:demo --workspace @verity/api",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}
