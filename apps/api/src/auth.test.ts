@@ -6,42 +6,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from './app';
 import type { AppConfig } from './config/env';
 import type { HealthChecker } from './services/health';
+import { testConfig } from './testing/fixtures';
+import { createAiClientStub } from './testing/ai-stub';
 
 const PASSWORD = 'password123';
 // bcrypt hash of "password123" (cost 12)
 const PASSWORD_HASH = '$2b$12$JwVPKrTJn7pgsR5NY5SUfed392zTdbw/5yoekLhYVtBwMnoH.1YiS';
 
-const config: AppConfig = {
-  NODE_ENV: 'test',
-  API_PORT: 4000,
-  WEB_ORIGIN: 'http://localhost:5173',
-  LOG_LEVEL: 'silent',
-  POSTGRES_HOST: 'localhost',
-  POSTGRES_PORT: 5432,
-  POSTGRES_DB: 'verity',
-  VERITY_APP_USER: 'verity_app',
-  VERITY_APP_PASSWORD: 'test-password',
-  REDIS_URL: 'redis://localhost:6379',
-  MINIO_ENDPOINT: 'localhost',
-  MINIO_PORT: 9000,
-  MINIO_USE_SSL: false,
-  MINIO_BUCKET: 'verity-docs',
-  AI_SERVICE_URL: 'http://localhost:8000',
-  UPLOAD_MAX_MB: 25,
-  JWT_ACCESS_SECRET: 'test-access-secret-32-characters-long!!',
-  JWT_REFRESH_SECRET: 'test-refresh-secret-32-characters-loong!!',
-  ACCESS_TOKEN_TTL: '15m',
-  REFRESH_TOKEN_TTL_DAYS: 7,
-  JWT_ISSUER: 'verity',
-  JWT_AUDIENCE: 'verity-api',
-  COOKIE_SECURE: false,
-  COOKIE_SAME_SITE: 'lax',
-  AUTH_RATE_LIMIT_PER_MIN: 100,
-  databaseUrl: 'postgresql://verity_app:test-password@localhost:5432/verity',
-  minioUrl: 'http://localhost:9000',
-  isProduction: false,
-};
-
+const config: AppConfig = testConfig();
 const logger = pino({ level: 'silent' });
 
 interface UserRow {
@@ -270,7 +242,7 @@ const health: HealthChecker = {
 };
 
 function createTestApp(db: FakeDb) {
-  return createApp({ config, logger, health, pool: db.pool });
+  return createApp({ config, logger, health, pool: db.pool, ai: createAiClientStub() });
 }
 
 function refreshCookieFrom(response: request.Response): string {

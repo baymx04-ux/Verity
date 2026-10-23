@@ -1,0 +1,138 @@
+[
+  {
+    "file": "employee-handbook.md",
+    "title": "Employee Handbook",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "access-policy.md",
+    "title": "Access Policy",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "travel-policy.md",
+    "title": "Travel Policy",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "remote-work-policy.md",
+    "title": "Remote Work Policy",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "expense-policy.md",
+    "title": "Expense Policy",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "security-baseline.md",
+    "title": "Security Baseline",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "incident-response.md",
+    "title": "Incident Response Policy",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "onboarding-guide.md",
+    "title": "Onboarding Guide",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "benefits-summary.md",
+    "title": "Benefits Summary",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "performance-review-guide.md",
+    "title": "Performance Review Guide",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "q3-revenue-report.md",
+    "title": "Q3 FY2026 Revenue Report",
+    "access": "restricted",
+    "groups": [
+      "finance"
+    ]
+  },
+  {
+    "file": "q2-revenue-report.md",
+    "title": "Q2 FY2026 Revenue Report",
+    "access": "restricted",
+    "groups": [
+      "finance"
+    ]
+  },
+  {
+    "file": "product-roadmap.md",
+    "title": "Product Roadmap",
+    "access": "restricted",
+    "groups": [
+      "engineering"
+    ]
+  },
+  {
+    "file": "api-architecture.md",
+    "title": "API Architecture",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "customer-support-playbook.md",
+    "title": "Customer Support Playbook",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "data-retention-policy.md",
+    "title": "Data Retention Policy",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "support-safety-runbook.md",
+    "title": "Support Safety Runbook",
+    "access": "public",
+    "groups": []
+  },
+  {
+    "file": "workforce-plan.md",
+    "title": "Workforce Plan FY2027",
+    "access": "restricted",
+    "groups": [
+      "people"
+    ]
+  },
+  {
+    "file": "approved-vendors.md",
+    "title": "Approved Vendors",
+    "access": "restricted",
+    "groups": [
+      "finance"
+    ]
+  },
+  {
+    "file": "pricing-guide.md",
+    "title": "Pricing Guide",
+    "access": "internal",
+    "groups": []
+  },
+  {
+    "file": "platform-operations-manual.md",
+    "title": "Platform Operations Manual",
+    "access": "internal",
+    "groups": []
+  }
+]

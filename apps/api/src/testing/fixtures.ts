@@ -1,0 +1,50 @@
+import type { AppConfig } from '../config/env';
+
+/** Shared test config so new required env keys only need one update. */
+export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+  return {
+    NODE_ENV: 'test',
+    API_PORT: 4000,
+    WEB_ORIGIN: 'http://localhost:5173',
+    LOG_LEVEL: 'silent',
+    POSTGRES_HOST: 'localhost',
+    POSTGRES_PORT: 5432,
+    POSTGRES_DB: 'verity',
+    VERITY_APP_USER: 'verity_app',
+    VERITY_APP_PASSWORD: 'test-password',
+    REDIS_URL: 'redis://localhost:6379',
+    MINIO_ENDPOINT: 'localhost',
+    MINIO_PORT: 9000,
+    MINIO_USE_SSL: false,
+    MINIO_BUCKET: 'verity-docs',
+    MINIO_ACCESS_KEY: 'verity-minio',
+    MINIO_SECRET_KEY: 'test-minio-secret',
+    MINIO_PUBLIC_ENDPOINT: 'http://localhost:9000',
+    AI_SERVICE_URL: 'http://localhost:8000',
+    INTERNAL_SERVICE_TOKEN: 'test-internal-token',
+    LLM_PROVIDER: 'google',
+    LLM_MODEL: 'gemini-3.8-flash',
+    GOOGLE_API_KEY: 'test-google-key',
+    EMBEDDING_PROVIDER: 'google',
+    EMBEDDING_MODEL: 'gemini-embedding-001',
+    EMBEDDING_DIM: 768,
+    RERANKER: 'none',
+    UPLOAD_MAX_MB: 25,
+    UPLOAD_RATE_LIMIT_PER_HOUR: 1000,
+    JWT_ACCESS_SECRET: 'test-access-secret-32-characters-long!!',
+    JWT_REFRESH_SECRET: 'test-refresh-secret-32-characters-loong!!',
+    ACCESS_TOKEN_TTL: '15m',
+    REFRESH_TOKEN_TTL_DAYS: 7,
+    JWT_ISSUER: 'verity',
+    JWT_AUDIENCE: 'verity-api',
+    COOKIE_SECURE: false,
+    COOKIE_SAME_SITE: 'lax',
+    AUTH_RATE_LIMIT_PER_MIN: 1000,
+    databaseUrl: 'postgresql://verity_app:test-password@localhost:5432/verity',
+    minioUrl: 'http://localhost:9000',
+    isProduction: false,
+    ...overrides,
+  };
+}
+
+export type { AppConfig };

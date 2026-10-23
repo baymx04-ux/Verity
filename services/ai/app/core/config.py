@@ -34,6 +34,23 @@ class Settings(BaseSettings):
     minio_secret_key: SecretStr = SecretStr("")
     minio_bucket: str = "verity-docs"
 
+    internal_service_token: SecretStr = SecretStr("")
+
+    llm_provider: str = "google"
+    llm_model: str = "gemini-3.8-flash"
+    google_api_key: SecretStr = SecretStr("")
+    google_ai_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+
+    embedding_provider: str = "google"
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dim: int = 768
+    embedding_batch_size: int = 16
+    embedding_cache_ttl_seconds: int = 60 * 60 * 24 * 7
+
+    chunk_tokens: int = 650
+    chunk_overlap: int = 100
+    ingest_max_mb: int = 25
+
     @property
     def database_url(self) -> str:
         user = quote(self.verity_app_user, safe="")

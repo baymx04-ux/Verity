@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from app import __version__
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
-from app.routers import health
+from app.ingestion.service import build_ingestion_service
+from app.routers import health, ingest
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -26,6 +27,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.started_at = time.monotonic()
+    app.state.ingestion_service = build_ingestion_service(resolved)
+
     app.include_router(health.router)
+    app.include_router(ingest.router)
 
     return app

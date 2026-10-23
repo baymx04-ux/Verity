@@ -9,6 +9,8 @@ export interface AccessTokenPayload {
   role: Role;
   type: 'access';
   jti: string;
+  /** Optional convenience claim; authorization always re-reads the database. */
+  groupIds?: string[];
 }
 
 export interface RefreshTokenClaims {
@@ -21,7 +23,7 @@ type ExpiresIn = NonNullable<jwt.SignOptions['expiresIn']>;
 
 export function signAccessToken(
   config: AppConfig,
-  user: { id: string; email: string; role: Role },
+  user: { id: string; email: string; role: Role; groupIds?: string[] },
   jti: string,
 ): string {
   return jwt.sign(
@@ -31,6 +33,7 @@ export function signAccessToken(
       role: user.role,
       type: 'access',
       jti,
+      ...(user.groupIds ? { groupIds: user.groupIds } : {}),
     } satisfies AccessTokenPayload,
     config.JWT_ACCESS_SECRET,
     {

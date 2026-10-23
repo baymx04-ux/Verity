@@ -7,13 +7,29 @@ import { loadConfig, type AppConfig } from './config/env';
 import { createLogger } from './config/logger';
 import { createPool } from './db';
 import { createHealthService } from './services/health';
+import { InternalAiClient } from './ai-client/internal';
+import { createIngestionQueue } from './queue/ingestion';
 
 function start(): void {
   const config: AppConfig = loadConfig();
   const logger = createLogger(config);
   const pool = createPool(config, logger);
   const health = createHealthService(config, logger);
-  const app = createApp({ config, logger, health, pool });
+
+  const ai = new InternalAiClient({
+    baseUrl: config.AI_SERVICE_URL,
+    token: config.INTERNAL_SERVICE_TOKEN ?? '',
+    logger,
+  });
+
+  let ingestionQueue: ReturnType<typeof createIngestionQueue> | null = null;
+  try {
+    ingestionQueue = createIngestionQueue(config, logger);
+  } catch (error) {
+    logger.error({ err: error }, 'ingestion queue unavailable; uploads will fail until Redis is up');
+  }
+
+  const app = createApp({ config, logger, health, pool, ai, ingestionQueue });
   const server = createServer(app);
 
   server.on('error', (error) => {
@@ -42,7 +58,11 @@ function start(): void {
     forceExit.unref();
 
     server.close(() => {
-      void Promise.allSettled([health.close(), pool.end()])
+      void Promise.allSettled([
+        ingestionQueue ? ingestionQueue.close() : Promise.resolve(),
+        health.close(),
+        pool.end(),
+      ])
         .catch((error: unknown) => {
           logger.error({ err: error }, 'failed to close dependencies');
         })

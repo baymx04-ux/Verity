@@ -21,11 +21,28 @@ const envSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   MINIO_BUCKET: z.string().min(1).default('verity-docs'),
+  MINIO_ACCESS_KEY: z.string().default('verity-minio'),
+  MINIO_SECRET_KEY: z.string().default('change-me-minio'),
+  MINIO_PUBLIC_ENDPOINT: z.string().default('http://localhost:9000'),
 
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
   INTERNAL_SERVICE_TOKEN: z.string().min(1).optional(),
 
+  LLM_PROVIDER: z.enum(['google', 'anthropic', 'openai', 'ollama']).default('google'),
+  LLM_MODEL: z.string().optional(),
+  GOOGLE_API_KEY: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OLLAMA_BASE_URL: z.string().optional(),
+  EMBEDDING_PROVIDER: z.string().default('google'),
+  EMBEDDING_MODEL: z.string().default('gemini-embedding-001'),
+  EMBEDDING_DIM: z.coerce.number().int().positive().default(768),
+  RERANKER: z.enum(['cohere', 'local', 'none', 'google']).default('none'),
+  COHERE_API_KEY: z.string().optional(),
+
   UPLOAD_MAX_MB: z.coerce.number().int().positive().default(25),
+  UPLOAD_RATE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),
 
   JWT_ACCESS_SECRET: z.string().min(32).default('change-me-access-secret-at-least-32-chars'),
   JWT_REFRESH_SECRET: z.string().min(32).default('change-me-refresh-secret-at-least-32-chars'),

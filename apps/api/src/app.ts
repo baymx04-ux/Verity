@@ -5,12 +5,20 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import type { Pool } from 'pg';
+import type { Queue } from 'bullmq';
 
 import type { AppConfig } from './config/env';
 import type { Logger } from './config/logger';
 import type { HealthChecker } from './services/health';
 import { createAuthRouter } from './routes/auth';
-import { optionalAuthenticate } from './middleware/auth';
+import { createDocumentRouter } from './routes/documents';
+import { createAdminRouter } from './routes/admin';
+import { StorageService } from './services/storage';
+import { DocumentService } from './services/documents';
+import type { InternalAiClient } from './ai-client/internal';
+import { optionalAuthenticate, resolveGroupIds } from './middleware/auth';
+import type { AuthRequest } from './types/auth';
+import type { IngestionJobData } from './queue/ingestion';
 
 const SERVICE_VERSION = '0.1.0';
 
@@ -19,10 +27,23 @@ export interface AppDependencies {
   logger: Logger;
   health: HealthChecker;
   pool: Pool;
+  ai: InternalAiClient;
+  /** Present only when the queue is reachable; uploads fail loudly without it. */
+  ingestionQueue?: Queue<IngestionJobData> | null;
 }
 
-export function createApp({ config, logger, health, pool }: AppDependencies): Express {
+export function createApp({
+  config,
+  logger,
+  health,
+  pool,
+  ai,
+  ingestionQueue = null,
+}: AppDependencies): Express {
   const app = express();
+
+  const storageService = new StorageService(config);
+  const documentService = new DocumentService(pool, storageService, ai, ingestionQueue);
 
   app.disable('x-powered-by');
   app.use(helmet());
@@ -36,6 +57,14 @@ export function createApp({ config, logger, health, pool }: AppDependencies): Ex
   app.use(cookieParser());
   app.use(express.json({ limit: '1mb' }));
   app.use(optionalAuthenticate(config, logger));
+
+  // Restricted-document checks need live group memberships, not JWT claims.
+  app.use(async (req: AuthRequest, _res, next) => {
+    if (req.user && !req.user.groupIds) {
+      req.user.groupIds = await resolveGroupIds(pool, req.user.id);
+    }
+    next();
+  });
 
   app.use(
     '/api',
@@ -62,6 +91,8 @@ export function createApp({ config, logger, health, pool }: AppDependencies): Ex
   });
 
   app.use('/api/auth', createAuthRouter({ config, logger, pool }));
+  app.use('/api/admin', createAdminRouter({ pool, documentService, config, logger }));
+  app.use('/api/documents', createDocumentRouter({ documentService, config, logger }));
 
   app.use((_req, res) => {
     res.status(404).json({
