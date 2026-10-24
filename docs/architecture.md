@@ -1,9 +1,10 @@
 # Verity Architecture
 
-**Status:** Phase 0 foundation is locally verified; Phase 1 (auth, RBAC, design
-system, app shell) is in verification. This document describes the target shape
-and marks what exists today. Behavioral source of truth:
-[`../plan.md`](../plan.md).
+**Status:** Phase 0–2 are implemented and covered by the Node and Python test
+suites. Phase 3 (retrieval and chat) is next. Docker Compose cold-start
+verification remains a Phase 7 item. This document describes the current shape;
+behavioral source of truth: [`../plan.md`](../plan.md), ingestion details:
+[`ingestion.md`](./ingestion.md).
 
 ## Services
 
@@ -15,17 +16,20 @@ web (React 18 + Vite build, nginx)
   │  /api
   ▼
 api (Express + TypeScript, gateway)
-  ├── Postgres 16 + pgvector   app schema (documents, chunks, users, conversations)
+  ├── Postgres 16 + pgvector   app schema (documents, chunks, users, groups)
   ├── Redis 7                  queues, caches, rate-limit state
-  ├── MinIO                    original documents and extracted text
-  └── ai (FastAPI, internal)   retrieval, rerank, LLM, SQL generation/validation
-                                   │
-                                   └── Postgres business_ro views (read-only role)
+  ├── MinIO                    original uploaded documents
+  └── ai (FastAPI, internal)   parsing, chunking, embeddings, later retrieval/SQL
+        ▲
+        │ signed /ingest and /documents/{id}
+        │
+worker (Node process) ────────┘
+  └── BullMQ consumer on Redis
 ```
 
 The browser never talks to Postgres, Redis, MinIO, or the AI service directly.
 The AI service is internal-only; the gateway owns authentication, authorization,
-uploads, SSE, and the public API. Text-to-SQL execution uses a separate
+uploads, SSE, and the public API. Text-to-SQL execution will use a separate
 `verity_sql_ro` connection that can only read vetted `business_ro` views.
 
 ## Authentication and sessions
@@ -44,18 +48,36 @@ API re-checks the JWT role on every protected request. Roles are `admin`,
 The web client performs a silent refresh on load and retries one protected
 request after a `401`.
 
+## Document ingestion
+
+Uploads flow `browser → gateway → MinIO → BullMQ → worker → AI → Postgres`.
+The gateway validates extension/MIME/size, stores the object, inserts a `queued`
+row plus any group grants, and enqueues a job. The worker transitions the row to
+`processing`, presigns a short-lived internal URL, and calls the AI service with
+an HMAC-signed request. The AI service parses, chunks, and embeds, then replaces
+the document's chunks in one transaction. The worker records `ready` with chunk
+and page counts. Failures are retried with exponential backoff and finally stored
+as `failed` with an actionable `error_code`.
+
+The web app polls the list while anything is `queued` or `processing`. Access is
+enforced in the list query and re-checked for detail/download. Downloads use
+presigned URLs against `MINIO_PUBLIC_ENDPOINT` so the host browser never needs the
+Docker-internal MinIO hostname. Full details: [`ingestion.md`](./ingestion.md).
+
 ## Current components
 
-| Component     | Current state                                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`    | Token-based design system, primitives, auth context/silent refresh, router guards, login, shell, conversation/source shells, dev gallery |
-| `apps/api`    | Express gateway with health, auth routes, RBAC middleware, refresh rotation/reuse detection, audit events, tests                         |
-| `services/ai` | FastAPI `/health`, structured logs, tests                                                                                                |
-| Postgres      | pgvector, `app` / `business` / `business_ro` schemas, versioned migrations including users/groups/refresh tokens                         |
-| Roles         | `verity_app` (DML on `app`) and `verity_sql_ro` (SELECT on `business_ro`)                                                                |
-| Redis / MinIO | Running with health checks; bucket bootstrapped by `minio-init`                                                                          |
-| Web / API     | Static build served by nginx, `/api` proxy with SSE buffering disabled                                                                   |
-| Langfuse      | Deferred to Phase 6 (plan §16); not faked                                                                                                |
+| Component         | Current state                                                                                                                                                                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web`        | Token-based design system, primitives, auth context/silent refresh, router guards, login, shell, conversation/source shells, documents library with multi-upload, filters, polling, detail editor, download, retry, delete, dev gallery |
+| `apps/api`        | Express gateway with health, auth routes, RBAC middleware, refresh rotation/reuse detection, audit events, document APIs, upload validation, signed AI client, tests                                                                    |
+| `apps/api` worker | Dedicated BullMQ consumer: status transitions, retries/backoff, chunk/page bookkeeping, ingestion audit trail                                                                                                                           |
+| `services/ai`     | FastAPI `/health`, signed `/ingest` and `DELETE /documents/{id}`, PDF/DOCX/TXT/MD/HTML parsing, structure-aware chunking, batched embeddings with retry and Redis cache                                                                 |
+| Postgres          | pgvector, `app` / `business` / `business_ro` schemas, versioned migrations including users/groups/refresh tokens/documents/chunks/ingestion jobs                                                                                        |
+| Roles             | `verity_app` (DML on `app`) and `verity_sql_ro` (SELECT on `business_ro`)                                                                                                                                                               |
+| Redis             | BullMQ ingestion queue, rate-limit state, embedding cache                                                                                                                                                                               |
+| MinIO             | Private bucket bootstrapped by `minio-init`; original documents; separate internal/public presigned URL endpoints                                                                                                                       |
+| Web / API         | Static build served by nginx, `/api` proxy with SSE buffering disabled                                                                                                                                                                  |
+| Langfuse          | Deferred to Phase 6 (plan §16); not faked                                                                                                                                                                                               |
 
 ## Database roles
 
@@ -74,20 +96,21 @@ requirement in `plan.md`, so Phase 0 separates them:
 
 ## Startup order
 
-`postgres`, `redis`, and `minio` become healthy → `migrate` records/apply SQL
-migrations and `minio-init` creates the private bucket → `ai` and `api` start →
-`web` starts after the API is healthy. Demo users are created separately with
-`make seed` (host Node against the exposed Postgres port).
+`postgres`, `redis`, and `minio` become healthy → `migrate` records/applies SQL
+migrations and `minio-init` creates the private bucket → `ai` starts and becomes
+healthy → `api` and `worker` start → `web` starts after the API is healthy. Demo
+users and the document corpus are created separately with `make seed` (host Node
+against the exposed Postgres port and Redis).
 
 ## Planned boundaries
 
-- **Phase 1 (in verification):** auth (JWT + rotating refresh cookie), RBAC, app schema tables, design system, app shell.
-- **Phase 2:** ingestion (upload → MinIO → parse → chunk → embed), BullMQ worker, document UI.
-- **Phase 3:** hybrid retrieval, RRF, rerank, citations, SSE chat, refusal gate.
+- **Phase 1 (implemented):** auth (JWT + rotating refresh cookie), RBAC, app schema tables, design system, app shell.
+- **Phase 2 (implemented):** upload → MinIO → queue → parse → chunk → embed → ready, BullMQ worker, document library UI, access grants, demo corpus.
+- **Phase 3 (next):** hybrid retrieval, RRF, rerank, citations, SSE chat, refusal gate.
 - **Phase 4:** `business` seed data, `business_ro` views, sqlglot validation, read-only execution, SQL UI.
-- **Phase 5:** admin metrics/traces, modern UI polish, a11y pass.
-- **Phase 6:** Langfuse, RAGAS eval harness, audit/retention.
-- **Phase 7:** hardening, load tests, final docs.
+- **Phase 5:** router, hybrid answers, conversation memory.
+- **Phase 6:** Langfuse, RAGAS eval harness, metrics, feedback.
+- **Phase 7:** hardening, load tests, accessibility, final docs and Compose cold start.
 
 ## Non-goals
 

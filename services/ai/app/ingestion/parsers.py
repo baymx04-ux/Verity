@@ -54,9 +54,7 @@ def _extension(filename: str, mime_type: str | None) -> str:
     mapped = MIME_ALIASES.get((mime_type or "").split(";")[0].strip().lower())
     if mapped:
         return mapped
-    raise DocumentParseError(
-        "Unsupported file type. Supported types: PDF, DOCX, TXT, MD, HTML."
-    )
+    raise DocumentParseError("Unsupported file type. Supported types: PDF, DOCX, TXT, MD, HTML.")
 
 
 def _decode_text(data: bytes) -> str:

@@ -72,6 +72,14 @@ export function requireRole(roles: Role[]) {
   };
 }
 
+export function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  if (!req.user) {
+    res.status(401).json({ error: { code: 'unauthorized', message: 'Authentication required' } });
+    return;
+  }
+  next();
+}
+
 export function optionalAuthenticate(config: AppConfig, logger: Logger) {
   return (req: AuthRequest, _res: Response, next: NextFunction) => {
     const header = req.headers.authorization;

@@ -4,12 +4,13 @@ Verity is a single-tenant, role-based enterprise knowledge base: RAG over intern
 documents plus a guarded text-to-SQL layer over live business data. Every answer
 is designed to show its evidence — cited document chunks or the SQL that ran.
 
-**Current state:** Phase 0 foundation is locally verified; Phase 1 (auth, RBAC,
-design system, app shell) is in verification. Docker startup was deferred during
-Phase 1 work, so the Compose stack has been config-validated but not re-run end to
-end after the auth changes. Chat, ingestion, retrieval, and SQL arrive in later
-phases. See [`plan.md`](./plan.md) for behavior and [`design.md`](./design.md) for
-the visual system.
+**Current state:** Phases 0–2 are implemented. Auth, RBAC, the design system,
+the app shell, document upload, MinIO storage, the BullMQ ingestion worker, AI
+parsing/chunking/embedding, and the documents library are in place and covered by
+the Node and Python suites. Docker Compose startup is config-validated but a full
+cold-start run is still deferred to Phase 7. Retrieval, chat, and SQL arrive in
+later phases. See [`plan.md`](./plan.md) for behavior and [`design.md`](./design.md)
+for the visual system.
 
 ## Quick start
 
@@ -48,6 +49,17 @@ make seed            # host Node; sets POSTGRES_HOST=localhost
 These accounts are development-only. Override them with the `SEED_*` variables in
 `.env`; the seed script refuses to run when `NODE_ENV=production`.
 
+`make seed` also queues the 21-document demo corpus in `infra/seed/documents/`
+and creates the `finance`, `people`, and `engineering` groups. Indexing needs a
+reachable `worker`, `ai`, MinIO, Redis, and a real `GOOGLE_API_KEY`; without them
+documents stay `queued` or fail with an error code. Set `SEED_DOCUMENTS=false` to
+seed users and groups only. Sign in as the admin and open **Documents** to watch
+statuses move from queued to ready.
+
+Supported uploads: PDF, DOCX, TXT, MD, and HTML up to `UPLOAD_MAX_MB` (default
+25 MB) each. The documents page accepts multiple files and shows per-file
+progress. See [`docs/ingestion.md`](./docs/ingestion.md) for the pipeline.
+
 The values in `.env.example` are **development-only placeholders**. Change every
 `change-me` value before exposing the stack beyond your machine. `.env` is
 gitignored; never commit it.
@@ -59,8 +71,8 @@ and MinIO volumes, including uploaded documents.
 
 - Monorepo: `apps/web` (React 18, TypeScript strict, Vite, Tailwind, React
   Router, Lucide), `apps/api` (Express, TypeScript strict, Zod, pino, helmet,
-  CORS, rate limiting, bcrypt, JWT), `services/ai` (FastAPI, Pydantic v2,
-  structured logs).
+  CORS, rate limiting, bcrypt, JWT, BullMQ, S3/MinIO), `services/ai` (FastAPI,
+  Pydantic v2, pypdf/docx/BeautifulSoup parsing, structured logs).
 - Phase 1 design system: token-based palette/typography/radii, accessible
   primitives (buttons, inputs, cards, badges, tables, dialog, sheet, dropdown,
   tabs, tooltip, alerts, empty states, skeletons), responsive app shell, mobile
@@ -72,8 +84,23 @@ and MinIO volumes, including uploaded documents.
 - Web auth: in-memory access token, silent refresh on load, one-shot retry after
   `401`, protected router, role guards, login screen, user menu, and honest
   environment badge.
-- Demo seed: idempotent admin/analyst/viewer users and `finance`, `people`, and
-  `engineering` groups.
+- Demo seed: idempotent admin/analyst/viewer users, `finance`, `people`, and
+  `engineering` groups, and a 21-document corpus including two conflicting
+  revenue reports, a prompt-injection fixture, and restricted documents.
+- Document API: multipart upload with extension/MIME/size validation and an
+  upload rate limit, MinIO object storage, list/detail/edit/retry/delete,
+  five-minute signed downloads, and SQL-side access filtering for
+  public/internal/restricted documents and groups.
+- Ingestion: BullMQ queue plus a dedicated `worker` process, the
+  `queued → processing → ready/failed` lifecycle, three attempts with exponential
+  backoff, per-attempt audit rows, chunk/page counts, and actionable failure codes.
+- AI ingestion: signed `/ingest` and `DELETE /documents/{id}`, PDF/DOCX/TXT/MD/HTML
+  parsing, structure-aware chunking with real overlap, contextual embedding text,
+  batched `gemini-embedding-001` calls with retries, a Redis content-hash cache,
+  and idempotent chunk replacement.
+- Documents UI: drag/drop multi-upload with per-file progress, search/filter/
+  pagination, four-second status polling, status and access badges, detail drawer,
+  signed download, admin access/group editing, retry, and delete confirmation.
 - Postgres 16 + pgvector with `app`, `business`, and `business_ro` schemas.
 - Two least-privilege login roles, verified by `make verify-roles`:
   - `verity_app`: CONNECT + DML on `app`; no DDL, no `business_ro`.
@@ -84,8 +111,11 @@ and MinIO volumes, including uploaded documents.
 - Versioned SQL migrations, a one-shot `migrate` service, and a private MinIO
   bucket bootstrapped by `minio-init`.
 - nginx serving the built web app and proxying `/api` with SSE buffering disabled.
-- Unit tests for auth flows (login, rotation/reuse, logout, RBAC, validation),
-  the app shell/router, gateway error/health contract, and AI health/config.
+- Unit and integration tests for auth flows (login, rotation/reuse, logout, RBAC,
+  validation), the app shell/router, documents UI (upload, filters, access edits,
+  delete), gateway error/health contract, upload validation, document access
+  filtering, deletion order/cascade, ingestion status and failure classification,
+  and AI health/config/parsing/chunking/embedding/signed requests.
 - ESLint, Prettier, Ruff, mypy strict, Vitest, pytest, and a GitHub Actions CI
   skeleton with a dependency audit.
 
@@ -157,7 +187,7 @@ make down            # stop, keep volumes
 make clean           # stop + delete volumes
 make logs            # follow logs
 make migrate         # apply pending SQL migrations
-make seed            # create demo admin/analyst/viewer users
+make seed            # seed demo users, groups, and documents
 make verify-roles    # prove role privileges and boundaries
 make test            # Vitest (web, gateway) + pytest (AI)
 make lint            # ESLint + Ruff
@@ -180,14 +210,14 @@ make audit           # npm audit + pip-audit
 
 | Phase | Scope                                                   | Status                                    |
 | ----- | ------------------------------------------------------- | ----------------------------------------- |
-| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Locally verified; Docker startup deferred |
-| 1     | Auth, RBAC, design system, app shell, demo users        | In verification                           |
-| 2     | Ingestion, chunking, embeddings, document admin         | Next                                      |
-| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Planned                                   |
+| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred   |
+| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green |
+| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green |
+| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Next                                      |
 | 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                   |
-| 5     | Admin metrics/traces, polish, accessibility             | Planned                                   |
-| 6     | Langfuse, RAGAS evals, retention                        | Planned                                   |
-| 7     | Hardening, load tests, final docs                       | Planned                                   |
+| 5     | Router, hybrid answers, conversation memory             | Planned                                   |
+| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                   |
+| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                   |
 
 ## Design and delivery decisions
 
@@ -198,8 +228,9 @@ make audit           # npm audit + pip-audit
   "attestation", fabricated scan counts, and manual route selector are **not**
   implemented because the plan does not define them.
 - Langfuse is deferred to Phase 6 rather than mocked.
-- Images are pinned where practical; `minio/mc` currently follows `latest` and
-  will be pinned when the ingestion pipeline lands.
+- Images are pinned where practical. The MinIO image follows `latest` (currently
+  the `coollabsio/minio` mirror because the upstream image was unavailable); it
+  will be pinned during the Phase 7 hardening pass.
 
 ## Documentation
 
@@ -207,4 +238,5 @@ make audit           # npm audit + pip-audit
 - [`design.md`](./design.md) — visual system and UX
 - [`docs/implementation-plan.md`](./docs/implementation-plan.md) — phases, risks, conflict resolutions, open questions
 - [`docs/architecture.md`](./docs/architecture.md) — services, schemas, roles, startup order
+- [`docs/ingestion.md`](./docs/ingestion.md) — document pipeline, storage layout, chunking, statuses, demo corpus
 - [`docs/api.md`](./docs/api.md) — public error/health contract and planned SSE shape

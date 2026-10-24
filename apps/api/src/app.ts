@@ -13,8 +13,12 @@ import type { HealthChecker } from './services/health';
 import { createAuthRouter } from './routes/auth';
 import { createDocumentRouter } from './routes/documents';
 import { createAdminRouter } from './routes/admin';
+import { createConversationsRouter } from './routes/conversations';
+import { createChatRouter } from './routes/chat';
+import { createMessagesRouter } from './routes/messages';
 import { StorageService } from './services/storage';
 import { DocumentService } from './services/documents';
+import { ChatService } from './services/chat';
 import type { InternalAiClient } from './ai-client/internal';
 import { optionalAuthenticate, resolveGroupIds } from './middleware/auth';
 import type { AuthRequest } from './types/auth';
@@ -44,6 +48,7 @@ export function createApp({
 
   const storageService = new StorageService(config);
   const documentService = new DocumentService(pool, storageService, ai, ingestionQueue);
+  const chatService = new ChatService(pool, ai, logger);
 
   app.disable('x-powered-by');
   app.use(helmet());
@@ -93,6 +98,9 @@ export function createApp({
   app.use('/api/auth', createAuthRouter({ config, logger, pool }));
   app.use('/api/admin', createAdminRouter({ pool, documentService, config, logger }));
   app.use('/api/documents', createDocumentRouter({ documentService, config, logger }));
+  app.use('/api/conversations', createConversationsRouter({ chatService, logger }));
+  app.use('/api/chat', createChatRouter({ chatService, logger }));
+  app.use('/api/messages', createMessagesRouter({ chatService, logger }));
 
   app.use((_req, res) => {
     res.status(404).json({

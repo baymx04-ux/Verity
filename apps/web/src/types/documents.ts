@@ -60,11 +60,13 @@ export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
 
 export const INGESTION_ERROR_LABELS: Record<string, string> = {
   parse_error: 'The file could not be parsed',
+  parse_timeout: 'Parsing timed out',
   embedding_error: 'Embedding generation failed',
   ai_unavailable: 'The ingestion service was unavailable',
   ai_unauthorized: 'The ingestion service rejected the request',
   queue_unavailable: 'The ingestion queue was unavailable',
   storage_error: 'The stored file could not be read',
+  ingest_failed: 'Ingestion failed',
   timeout: 'Ingestion timed out',
 };
 

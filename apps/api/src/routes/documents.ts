@@ -17,27 +17,9 @@ const ALLOWED_MIME_TYPES = [
   'text/markdown',
   'text/x-markdown',
   'text/html',
+  'application/xhtml+xml',
   'application/octet-stream',
 ];
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    // Extension AND declared MIME are checked here; the AI parser is the final
-    // authority and rejects anything that does not actually parse.
-    const extension = file.originalname.split('.').pop()?.toLowerCase() ?? '';
-    if (!ALLOWED_EXTENSIONS.includes(extension)) {
-      cb(new Error('Unsupported file type. Supported types: PDF, DOCX, TXT, MD, HTML.'));
-      return;
-    }
-    if (file.mimetype && !ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      cb(new Error('The declared file type does not match a supported document type.'));
-      return;
-    }
-    cb(null, true);
-  },
-});
 
 export interface DocumentRouterDeps {
   documentService: DocumentService;
@@ -49,6 +31,26 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
   const router = Router();
   const requireAuth = authenticate(config, logger);
   const uploadLimiter = uploadRateLimiter(config.UPLOAD_RATE_LIMIT_PER_HOUR);
+  const maxUploadMb = config.UPLOAD_MAX_MB;
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: maxUploadMb * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      // Extension AND declared MIME are checked here; the AI parser is the final
+      // authority and rejects anything that does not actually parse.
+      const extension = file.originalname.split('.').pop()?.toLowerCase() ?? '';
+      if (!ALLOWED_EXTENSIONS.includes(extension)) {
+        cb(new Error('Unsupported file type. Supported types: PDF, DOCX, TXT, MD, HTML.'));
+        return;
+      }
+      if (file.mimetype && !ALLOWED_MIME_TYPES.includes(file.mimetype)) {
+        cb(new Error('The declared file type does not match a supported document type.'));
+        return;
+      }
+      cb(null, true);
+    },
+  });
 
   function receiveUpload(req: AuthRequest, res: Response, next: NextFunction): void {
     upload.single('file')(req, res, (error: unknown) => {
@@ -61,7 +63,7 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
         res.status(413).json({
           error: {
             code: 'file_too_large',
-            message: 'The file exceeds the 25 MB upload limit.',
+            message: `The file exceeds the ${maxUploadMb} MB upload limit.`,
           },
         });
         return;
@@ -71,9 +73,7 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
         error: {
           code: 'invalid_file',
           message:
-            error instanceof Error
-              ? error.message
-              : 'The uploaded file could not be accepted.',
+            error instanceof Error ? error.message : 'The uploaded file could not be accepted.',
         },
       });
     });
@@ -114,8 +114,7 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
           return;
         }
 
-        const accessLevel =
-          req.user!.role === 'analyst' ? 'internal' : parsed.data.access_level;
+        const accessLevel = req.user!.role === 'analyst' ? 'internal' : parsed.data.access_level;
 
         const groupIds =
           typeof parsed.data.group_ids === 'string'
@@ -142,7 +141,6 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
 
   router.get('/', requireAuth, async (req: AuthRequest, res, next) => {
     try {
-
       const result = await documentService.list(req.user!, {
         ...(typeof req.query.status === 'string' ? { status: req.query.status } : {}),
         ...(typeof req.query.access_level === 'string'
@@ -189,18 +187,23 @@ export function createDocumentRouter({ documentService, config, logger }: Docume
     }
   });
 
-  router.post('/:id/retry', requireAuth, requireRole(['admin', 'analyst']), async (req: AuthRequest, res, next) => {
-    try {
-      const updated = await documentService.retry(String(req.params.id), req.user!);
-      if (!updated) {
-        res.status(404).json({ error: { code: 'not_found', message: 'Document not found' } });
-        return;
+  router.post(
+    '/:id/retry',
+    requireAuth,
+    requireRole(['admin', 'analyst']),
+    async (req: AuthRequest, res, next) => {
+      try {
+        const updated = await documentService.retry(String(req.params.id), req.user!);
+        if (!updated) {
+          res.status(404).json({ error: { code: 'not_found', message: 'Document not found' } });
+          return;
+        }
+        res.json({ document: updated });
+      } catch (error) {
+        next(error);
       }
-      res.json({ document: updated });
-    } catch (error) {
-      next(error);
-    }
-  });
+    },
+  );
 
   router.patch('/:id', requireAuth, requireRole(['admin']), async (req, res, next) => {
     try {

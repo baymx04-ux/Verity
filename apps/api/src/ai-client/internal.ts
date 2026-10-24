@@ -12,6 +12,17 @@ export interface AiIngestResult {
   status: 'indexed';
 }
 
+export interface AiChatStreamPayload {
+  conversation_id: string;
+  question: string;
+  access_context: {
+    user_id: string;
+    role: string;
+    group_ids: string[];
+  };
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  trace_id?: string | null;
+}
 export class AiRequestError extends Error {
   constructor(
     readonly status: number,
@@ -53,6 +64,52 @@ export class InternalAiClient {
     size_bytes: number;
   }): Promise<AiIngestResult> {
     return this.request<AiIngestResult>('POST', '/ingest', payload, 5 * 60_000);
+  }
+
+  chatStream(payload: AiChatStreamPayload, signal?: AbortSignal): Promise<Response> {
+    if (!this.token) {
+      throw new AiRequestError(503, 'Internal service authentication is not configured.');
+    }
+
+    const rawBody = JSON.stringify(payload);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const bodyHash = createHash('sha256').update(rawBody).digest('hex');
+    const signature = createHmac('sha256', this.token)
+      .update(`POST\n/chat/stream\n${timestamp}\n${bodyHash}`)
+      .digest('hex');
+
+    const fetchInit: RequestInit = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Verity-Timestamp': timestamp,
+        'X-Verity-Signature': signature,
+      },
+      body: rawBody,
+    };
+    if (signal) {
+      fetchInit.signal = signal;
+    }
+
+    return fetch(`${this.baseUrl}/chat/stream`, fetchInit).catch((error) => {
+      this.logger.error({ err: error }, 'ai chat stream request failed');
+      throw new AiRequestError(502, 'The answer service is unavailable.');
+    }).then(async (response) => {
+      if (!response.ok) {
+        let detail = 'The answer service rejected the request.';
+        try {
+          const data = (await response.json()) as { detail?: string };
+          if (data.detail) {
+            detail = String(data.detail).slice(0, 400);
+          }
+        } catch {
+          // keep generic
+        }
+        this.logger.warn({ status: response.status }, 'ai chat stream returned an error');
+        throw new AiRequestError(response.status, detail);
+      }
+      return response;
+    });
   }
 
   async deleteDocument(documentId: string): Promise<void> {

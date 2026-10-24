@@ -1,7 +1,10 @@
 import type { Pool } from 'pg';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import type { AuthUser } from '../types/auth';
+import type { InternalAiClient } from '../ai-client/internal';
 import { DocumentService, type DocumentRow } from './documents';
 import type { StorageService } from './storage';
 
@@ -111,12 +114,10 @@ describe('document access control', () => {
     const { service } = createService([row]);
 
     await expect(service.getById(row.id, user('viewer', []))).resolves.toBeNull();
-    await expect(
-      service.getById(row.id, user('viewer', ['group-finance'])),
-    ).resolves.toMatchObject({ id: row.id });
-    await expect(
-      service.getById(row.id, user('analyst', ['group-people'])),
-    ).resolves.toBeNull();
+    await expect(service.getById(row.id, user('viewer', ['group-finance']))).resolves.toMatchObject(
+      { id: row.id },
+    );
+    await expect(service.getById(row.id, user('analyst', ['group-people']))).resolves.toBeNull();
   });
 
   it('does not retry a document the caller cannot access', async () => {
@@ -128,5 +129,84 @@ describe('document access control', () => {
 
     await expect(service.retry(row.id, user('analyst', []))).resolves.toBeNull();
     expect(queries.some((query) => query.text.includes('UPDATE app.documents'))).toBe(false);
+  });
+});
+
+describe('document deletion', () => {
+  it('removes the stored object, AI chunks, and then the row', async () => {
+    const row = documentRow();
+    const calls: string[] = [];
+
+    const pool = {
+      query: async (text: string, values: unknown[] = []) => {
+        if (text.includes('SELECT storage_key')) {
+          calls.push('row:lookup');
+          return { rows: [{ storage_key: row.storage_key }], rowCount: 1 };
+        }
+        if (text.includes('DELETE FROM app.documents')) {
+          calls.push(`row:delete:${String(values[0])}`);
+          return { rows: [], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as Pool;
+
+    const storage = {
+      delete: async (key: string) => {
+        calls.push(`storage:delete:${key}`);
+      },
+    } as unknown as StorageService;
+
+    const ai = {
+      deleteDocument: async (id: string) => {
+        calls.push(`ai:delete:${id}`);
+      },
+    } as unknown as Pick<InternalAiClient, 'deleteDocument'>;
+
+    const service = new DocumentService(pool, storage, ai, null);
+
+    await expect(service.delete(row.id)).resolves.toBe(true);
+    expect(calls).toEqual([
+      'row:lookup',
+      `storage:delete:${row.storage_key}`,
+      `ai:delete:${row.id}`,
+      `row:delete:${row.id}`,
+    ]);
+  });
+
+  it('returns false for an unknown document without side effects', async () => {
+    const calls: string[] = [];
+    const pool = {
+      query: async () => {
+        calls.push('row:lookup');
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as Pool;
+    const storage = {
+      delete: async () => {
+        calls.push('storage:delete');
+      },
+    } as unknown as StorageService;
+    const ai = {
+      deleteDocument: async () => {
+        calls.push('ai:delete');
+      },
+    } as unknown as Pick<InternalAiClient, 'deleteDocument'>;
+
+    const service = new DocumentService(pool, storage, ai, null);
+
+    await expect(service.delete('missing')).resolves.toBe(false);
+    expect(calls).toEqual(['row:lookup']);
+  });
+
+  it('keeps chunks cascading from the documents table', async () => {
+    const sql = await readFile(
+      path.resolve(__dirname, '../../../../infra/postgres/migrations/0003_documents.sql'),
+      'utf8',
+    );
+
+    expect(sql).toMatch(
+      /document_id uuid NOT NULL REFERENCES app\.documents\(id\) ON DELETE CASCADE/,
+    );
   });
 });

@@ -16,7 +16,8 @@ from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-_TASK_TYPE = "RETRIEVAL_DOCUMENT"
+_DOCUMENT_TASK_TYPE = "RETRIEVAL_DOCUMENT"
+_QUERY_TASK_TYPE = "RETRIEVAL_QUERY"
 
 
 class EmbeddingError(RuntimeError):
@@ -94,12 +95,12 @@ class GoogleEmbeddingClient:
     def dimensions(self) -> int:
         return self._dimensions
 
-    def cache_keys(self, texts: Sequence[str]) -> list[str]:
-        return [self._cache_key(text) for text in texts]
+    def cache_keys(self, texts: Sequence[str], task_type: str = _DOCUMENT_TASK_TYPE) -> list[str]:
+        return [self._cache_key(text, task_type) for text in texts]
 
-    def _cache_key(self, text: str) -> str:
+    def _cache_key(self, text: str, task_type: str) -> str:
         digest = hashlib.sha256(
-            f"{self._model}:{self._dimensions}:{_TASK_TYPE}:{text}".encode()
+            f"{self._model}:{self._dimensions}:{task_type}:{text}".encode()
         ).hexdigest()
         return f"verity:embedding:{digest}"
 
@@ -108,6 +109,18 @@ class GoogleEmbeddingClient:
         texts: Sequence[str],
         cache: EmbeddingCacheProtocol | None = None,
     ) -> list[list[float]]:
+        return await self._embed(texts, _DOCUMENT_TASK_TYPE, cache)
+
+    async def embed_query(self, text: str) -> list[float]:
+        vectors = await self._embed([text], _QUERY_TASK_TYPE, None)
+        return vectors[0]
+
+    async def _embed(
+        self,
+        texts: Sequence[str],
+        task_type: str,
+        cache: EmbeddingCacheProtocol | None,
+    ) -> list[list[float]]:
         if not texts:
             return []
         if not self._api_key:
@@ -115,7 +128,7 @@ class GoogleEmbeddingClient:
                 "GOOGLE_API_KEY is not configured. Add a Google AI Studio key to .env."
             )
 
-        keys = self.cache_keys(texts)
+        keys = self.cache_keys(texts, task_type)
         cached = await cache.get_many(keys) if cache else [None] * len(texts)
 
         missing_indices = [index for index, vector in enumerate(cached) if vector is None]
@@ -125,7 +138,7 @@ class GoogleEmbeddingClient:
 
             for start in range(0, len(missing_texts), self._batch_size):
                 batch = missing_texts[start : start + self._batch_size]
-                fresh.extend(await self._embed_batch(batch))
+                fresh.extend(await self._embed_batch(batch, task_type))
 
             for offset, index in enumerate(missing_indices):
                 cached[index] = fresh[offset]
@@ -149,14 +162,14 @@ class GoogleEmbeddingClient:
             vectors.append(vector)
         return vectors
 
-    async def _embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
+    async def _embed_batch(self, texts: Sequence[str], task_type: str) -> list[list[float]]:
         url = f"{self._base_url}/models/{self._model}:batchEmbedContents"
         body = {
             "requests": [
                 {
                     "model": f"models/{self._model}",
                     "content": {"parts": [{"text": text}]},
-                    "taskType": _TASK_TYPE,
+                    "taskType": task_type,
                     "outputDimensionality": self._dimensions,
                 }
                 for text in texts

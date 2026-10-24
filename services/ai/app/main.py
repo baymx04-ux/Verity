@@ -5,8 +5,13 @@ from fastapi import FastAPI
 from app import __version__
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.ingestion.embeddings import GoogleEmbeddingClient
 from app.ingestion.service import build_ingestion_service
-from app.routers import health, ingest
+from app.llm.factory import build_llm_client
+from app.rag.rerank import build_reranker
+from app.rag.retrieval import PostgresRetrievalStore, RetrievalService
+from app.rag.service import ChatService
+from app.routers import chat, health, ingest
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,7 +34,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.started_at = time.monotonic()
     app.state.ingestion_service = build_ingestion_service(resolved)
 
+    llm = build_llm_client(resolved)
+    retrieval = RetrievalService(
+        resolved,
+        embeddings=GoogleEmbeddingClient(resolved),
+        store=PostgresRetrievalStore(resolved),
+        reranker=build_reranker(resolved),
+    )
+    app.state.chat_service = ChatService(resolved, retrieval=retrieval, llm=llm)
+
     app.include_router(health.router)
     app.include_router(ingest.router)
+    app.include_router(chat.router)
 
     return app

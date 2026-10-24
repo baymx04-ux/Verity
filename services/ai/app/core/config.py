@@ -38,14 +38,27 @@ class Settings(BaseSettings):
 
     llm_provider: str = "google"
     llm_model: str = "gemini-3.8-flash"
+    llm_temperature: float = 0.1
+    llm_max_output_tokens: int = 1200
     google_api_key: SecretStr = SecretStr("")
     google_ai_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    anthropic_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    ollama_base_url: str = "http://localhost:11434"
 
     embedding_provider: str = "google"
     embedding_model: str = "gemini-embedding-001"
     embedding_dim: int = 768
     embedding_batch_size: int = 16
     embedding_cache_ttl_seconds: int = 60 * 60 * 24 * 7
+
+    retrieve_top_k: int = 30
+    rerank_top_n: int = 6
+    min_rerank_score: float = 0.25
+    reranker: str = "none"
+    rerank_model: str = "rerank-v3.5"
+    cohere_api_key: SecretStr = SecretStr("")
+    chat_history_limit: int = 20
 
     chunk_tokens: int = 650
     chunk_overlap: int = 100

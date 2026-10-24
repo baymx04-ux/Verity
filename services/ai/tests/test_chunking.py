@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 from app.ingestion.chunking import chunk_pages, embedding_text, estimate_tokens, normalize_text
 from app.ingestion.parsers import ParsedPage
 
@@ -21,16 +23,20 @@ def test_chunks_respect_the_token_budget() -> None:
 
 
 def test_overlap_repeats_context_between_neighbours() -> None:
-    first = " ".join(["Alpha sentence."] * 40)
-    second = " ".join(["Bravo sentence."] * 40)
+    first = " ".join([f"Alpha{i} sentence." for i in range(80)])
+    second = " ".join([f"Bravo{i} sentence." for i in range(80)])
     pages = [page(f"{first}\n\n{second}")]
 
     chunks = chunk_pages(pages, target_tokens=100, overlap_tokens=40)
 
     assert len(chunks) >= 2
-    assert "Alpha" in chunks[0].content
-    assert "Alpha" in chunks[1].content
     assert all(chunk.token_count <= 100 for chunk in chunks)
+
+    # The tail of each chunk must be carried into the next chunk. Checking a
+    # unique unit (not a repeated string) proves overlap actually happens.
+    for previous, following in pairwise(chunks):
+        tail = previous.content.split("\n\n")[-1]
+        assert tail in following.content
 
 
 def test_long_paragraph_is_split_without_empty_chunks() -> None:

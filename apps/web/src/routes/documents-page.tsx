@@ -1,11 +1,4 @@
-import {
-  ChevronRight,
-  Download,
-  FileSearch,
-  FileText,
-  RefreshCw,
-  Upload,
-} from 'lucide-react';
+import { ChevronRight, Download, FileSearch, FileText, RefreshCw, Upload } from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 import { Alert } from '../components/ui/alert';
@@ -37,7 +30,11 @@ import {
 } from '../features/documents/document-api';
 import { DocumentAccessBadge, DocumentStatusBadge } from '../features/documents/document-badges';
 import { DocumentDetail } from '../features/documents/document-detail';
-import { UploadDialog, type UploadRequest } from '../features/documents/upload-dialog';
+import {
+  UploadDialog,
+  type UploadEvents,
+  type UploadRequest,
+} from '../features/documents/upload-dialog';
 import type {
   AccessLevel,
   DocumentFilters,
@@ -193,10 +190,36 @@ export function DocumentsPage() {
     setQuery(INITIAL_QUERY);
   }
 
-  async function handleUpload(input: UploadRequest, onProgress: (percent: number) => void) {
-    await uploadDocument({ ...input, onProgress });
-    setQuery((current) => ({ ...current, page: 1 }));
-    refresh();
+  async function handleUpload(inputs: UploadRequest[], events: UploadEvents) {
+    const failures: string[] = [];
+
+    for (const [index, input] of inputs.entries()) {
+      try {
+        await uploadDocument({
+          ...input,
+          onProgress: (percent) => events.onProgress(index, percent),
+        });
+        events.onComplete(index);
+      } catch (uploadError) {
+        const message =
+          uploadError instanceof Error
+            ? uploadError.message
+            : 'The document could not be uploaded.';
+        failures.push(message);
+        events.onError(index, message);
+      }
+    }
+
+    if (inputs.length > failures.length) {
+      setQuery((current) => ({ ...current, page: 1 }));
+      refresh();
+    }
+
+    if (failures.length > 0) {
+      throw new Error(
+        `${failures.length} of ${inputs.length} ${inputs.length === 1 ? 'file' : 'files'} could not be uploaded.`,
+      );
+    }
   }
 
   async function handleDownload(document: DocumentItem) {
@@ -207,9 +230,7 @@ export function DocumentsPage() {
   async function handleRetry(document: DocumentItem) {
     const updated = await retryDocument(document.id);
     setSelected(updated);
-    setDocuments((current) =>
-      current.map((item) => (item.id === updated.id ? updated : item)),
-    );
+    setDocuments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     refresh();
   }
 
@@ -219,9 +240,7 @@ export function DocumentsPage() {
   ) {
     const updated = await updateDocument(document.id, updates);
     setSelected(updated);
-    setDocuments((current) =>
-      current.map((item) => (item.id === updated.id ? updated : item)),
-    );
+    setDocuments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     refresh();
   }
 
@@ -472,8 +491,7 @@ export function DocumentsPage() {
             <p className="text-body-sm text-ink-500">
               Showing{' '}
               <span className="tabular text-ink-700">
-                {(query.page - 1) * PAGE_SIZE + 1}–
-                {Math.min(query.page * PAGE_SIZE, total)}
+                {(query.page - 1) * PAGE_SIZE + 1}–{Math.min(query.page * PAGE_SIZE, total)}
               </span>{' '}
               of <span className="tabular text-ink-700">{total.toLocaleString()}</span>
             </p>

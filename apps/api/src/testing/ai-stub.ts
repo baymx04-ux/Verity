@@ -18,6 +18,11 @@ export function createAiClientStub(
       status: 'indexed' as const,
     }),
     deleteDocument: async () => undefined,
+    chatStream: async () =>
+      new Response(
+        'event: route\ndata: {"route":"documents"}\n\nevent: token\ndata: {"text":"Stub answer"}\n\nevent: sources\ndata: {"citations":[]}\n\nevent: done\ndata: {"usage":{"prompt_tokens":10,"completion_tokens":5},"latency_ms":100}\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      ),
     ...overrides,
   };
 

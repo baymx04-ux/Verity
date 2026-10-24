@@ -51,7 +51,7 @@ build: ## Build all images
 migrate: env ## Apply pending SQL migrations
 	$(COMPOSE) run --rm migrate
 
-seed: ## Create the demo admin/analyst/viewer users (Phase 1)
+seed: ## Create demo users, groups, and the document corpus
 	POSTGRES_HOST=localhost REDIS_URL=redis://localhost:6379 MINIO_ENDPOINT=localhost npm run seed:demo
 
 test: test-node test-ai ## Run all unit tests

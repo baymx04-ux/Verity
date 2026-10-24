@@ -149,11 +149,16 @@ def chunk_pages(
     current_chars = 0
 
     for unit in units:
+        # Leave room for the overlap that will be prepended to this group. Without
+        # this reservation a group is packed to `target_tokens`, leaving no space
+        # for its predecessor's tail and silently disabling overlap.
+        group_budget = target_tokens if not groups else max(1, target_tokens - overlap_tokens)
+
         sep = 2 if current else 0
         candidate_chars = current_chars + sep + len(unit.text)
         candidate_tokens = max(1, math.ceil(candidate_chars / 4))
 
-        if current and candidate_tokens > target_tokens:
+        if current and candidate_tokens > group_budget:
             groups.append(current)
             current = []
             current_chars = 0
@@ -162,7 +167,7 @@ def chunk_pages(
         current.append(unit)
         current_chars += sep2 + len(unit.text)
 
-        if estimate_tokens("\n\n".join(u.text for u in current)) >= target_tokens:
+        if estimate_tokens("\n\n".join(u.text for u in current)) >= group_budget:
             groups.append(current)
             current = []
             current_chars = 0

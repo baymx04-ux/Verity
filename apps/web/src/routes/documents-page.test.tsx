@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -105,6 +105,64 @@ afterEach(() => {
   setAccessToken(null);
 });
 
+class ControlledXhr {
+  static instances: ControlledXhr[] = [];
+
+  upload = {
+    listeners: {} as Record<string, (event: ProgressEvent) => void>,
+    addEventListener: (type: string, listener: (event: ProgressEvent) => void) => {
+      this.upload.listeners[type] = listener;
+    },
+  };
+
+  listeners: Record<string, () => void> = {};
+  status = 0;
+  responseText = '';
+  responseType = '';
+
+  constructor() {
+    ControlledXhr.instances.push(this);
+  }
+
+  open() {
+    // no-op
+  }
+
+  setRequestHeader() {
+    // no-op
+  }
+
+  addEventListener(type: string, listener: () => void) {
+    this.listeners[type] = listener;
+  }
+
+  send() {
+    this.upload.listeners.progress?.({
+      lengthComputable: true,
+      loaded: 25,
+      total: 100,
+    } as ProgressEvent);
+  }
+
+  complete() {
+    this.status = 201;
+    this.responseText = JSON.stringify({
+      document: documentFixture({
+        id: `doc-${ControlledXhr.instances.length + 1}`,
+        title: 'Policy digest',
+        status: 'queued',
+      }),
+    });
+    this.listeners.load?.();
+  }
+}
+
+function installControlledXhr() {
+  ControlledXhr.instances = [];
+  vi.stubGlobal('XMLHttpRequest', ControlledXhr);
+  return ControlledXhr;
+}
+
 describe('Documents page', () => {
   it('lists accessible documents and opens the admin detail panel', async () => {
     const user = userEvent.setup();
@@ -121,9 +179,7 @@ describe('Documents page', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open Security handbook' }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Document settings' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Document settings' })).toBeInTheDocument();
     expect(screen.getByLabelText('Access level')).toHaveValue('internal');
   });
 
@@ -138,9 +194,7 @@ describe('Documents page', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open Security handbook' }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'Security handbook' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Security handbook' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Document settings' })).not.toBeInTheDocument();
   });
 
@@ -235,7 +289,7 @@ describe('Documents page', () => {
 
     await user.click(await screen.findByRole('button', { name: /Upload document/ }));
 
-    const input = screen.getByLabelText(/Drop a document here/);
+    const input = screen.getByLabelText(/Drop documents here/);
     await user.upload(input, new File(['policy body'], 'policy.pdf', { type: 'application/pdf' }));
 
     await user.selectOptions(screen.getByLabelText('Access level'), 'restricted');
@@ -246,78 +300,75 @@ describe('Documents page', () => {
     ).toBeInTheDocument();
   });
 
-  it('uploads with progress and refreshes the list', async () => {
+  it('uploads a single document with progress and refreshes the list', async () => {
     const user = userEvent.setup();
     const fetchMock = stubFetch(documentHandler([documentFixture()]));
-
-    class FakeXhr {
-      static instances: FakeXhr[] = [];
-
-      upload = {
-        listeners: {} as Record<string, (event: ProgressEvent) => void>,
-        addEventListener: (type: string, listener: (event: ProgressEvent) => void) => {
-          this.upload.listeners[type] = listener;
-        },
-      };
-
-      listeners: Record<string, () => void> = {};
-      status = 0;
-      responseText = '';
-      responseType = '';
-
-      constructor() {
-        FakeXhr.instances.push(this);
-      }
-
-      open() {
-        // no-op
-      }
-
-      setRequestHeader() {
-        // no-op
-      }
-
-      addEventListener(type: string, listener: () => void) {
-        this.listeners[type] = listener;
-      }
-
-      send() {
-        this.upload.listeners.progress?.({
-          lengthComputable: true,
-          loaded: 50,
-          total: 100,
-        } as ProgressEvent);
-        window.setTimeout(() => {
-          this.status = 201;
-          this.responseText = JSON.stringify({
-            document: documentFixture({ id: 'doc-2', title: 'Policy digest', status: 'queued' }),
-          });
-          this.listeners.load?.();
-        }, 0);
-      }
-    }
-
-    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const Xhr = installControlledXhr();
 
     renderPage('admin');
 
     await user.click(await screen.findByRole('button', { name: /Upload document/ }));
 
-    const input = screen.getByLabelText(/Drop a document here/);
-    await user.upload(
-      input,
-      new File(['new policy body'], 'policy.md', { type: 'text/markdown' }),
-    );
+    const input = screen.getByLabelText(/Drop documents here/);
+    await user.upload(input, new File(['new policy body'], 'policy.md', { type: 'text/markdown' }));
     await user.selectOptions(screen.getByLabelText('Access level'), 'internal');
     await user.click(screen.getByRole('button', { name: 'Upload and index' }));
 
-    await waitFor(() => expect(FakeXhr.instances).toHaveLength(1));
+    await waitFor(() => expect(Xhr.instances).toHaveLength(1));
+    expect(screen.getByRole('progressbar', { name: 'Upload progress' })).toBeInTheDocument();
+
+    act(() => Xhr.instances[0]!.complete());
+
     await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: 'Upload document' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('heading', { name: 'Upload documents' })).not.toBeInTheDocument(),
     );
     await waitFor(() =>
-      expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/documents?')))
-        .toHaveLength(2),
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/documents?')),
+      ).toHaveLength(2),
+    );
+  });
+
+  it('uploads multiple documents with per-file progress', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch(documentHandler([documentFixture()]));
+    const Xhr = installControlledXhr();
+
+    renderPage('admin');
+
+    await user.click(await screen.findByRole('button', { name: /Upload document/ }));
+
+    const input = screen.getByLabelText(/Drop documents here/);
+    await user.upload(input, [
+      new File(['first policy'], 'policy-one.md', { type: 'text/markdown' }),
+      new File(['second policy'], 'policy-two.md', { type: 'text/markdown' }),
+    ]);
+
+    expect(screen.getByText('2 files selected')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Upload and index' }));
+
+    await waitFor(() => expect(Xhr.instances).toHaveLength(1));
+    expect(
+      screen.getByRole('progressbar', { name: 'Upload progress for policy-one.md' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('progressbar', { name: 'Upload progress for policy-two.md' }),
+    ).toBeInTheDocument();
+
+    act(() => Xhr.instances[0]!.complete());
+    await waitFor(() => expect(Xhr.instances).toHaveLength(2));
+
+    act(() => Xhr.instances[1]!.complete());
+
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: 'Upload documents' })).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/documents?')),
+      ).toHaveLength(2),
     );
   });
 
