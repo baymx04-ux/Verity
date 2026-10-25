@@ -12,6 +12,23 @@ export function authRateLimiter(limit = 10) {
   });
 }
 
+/** Chat turns are limited per authenticated user to keep model spend bounded. */
+export function chatRateLimiter(limitPerMinute = 20) {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: limitPerMinute,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => (req as AuthRequest).user?.id ?? req.ip ?? 'unknown',
+    message: {
+      error: {
+        code: 'rate_limited',
+        message: `Chat limit reached (${limitPerMinute} messages per minute). Try again shortly.`,
+      },
+    },
+  });
+}
+
 /** Uploads are limited per authenticated user, falling back to IP when anonymous. */
 export function uploadRateLimiter(limitPerHour = 10) {
   return rateLimit({

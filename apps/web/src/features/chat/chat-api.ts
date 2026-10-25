@@ -1,5 +1,6 @@
 import { getAccessToken } from '../../lib/access-token';
 import { apiFetch, refreshAccessToken } from '../../lib/api';
+import { createSseParser } from '../../lib/sse';
 
 export interface Conversation {
   id: string;
@@ -19,6 +20,19 @@ export interface Citation {
   score: number;
 }
 
+export interface MessageMetadata {
+  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error';
+  aborted?: boolean;
+  low_confidence?: boolean;
+  model?: string;
+  spans?: Record<string, number>;
+  cited_indices?: number[];
+  citation_count?: number;
+  retrieval?: { best_score?: number; candidates?: number };
+  error_code?: string;
+  [key: string]: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   conversation_id: string;
@@ -30,6 +44,7 @@ export interface ChatMessage {
   sql_result_preview?: unknown | null | undefined;
   trace_id?: string | null | undefined;
   latency_ms?: number | null | undefined;
+  metadata?: MessageMetadata | undefined;
   feedback?: { rating: number; comment: string | null } | null | undefined;
   created_at: string;
 }
@@ -43,24 +58,35 @@ export interface Feedback {
   created_at: string;
 }
 
+export interface StreamDonePayload {
+  message_id?: string;
+  conversation_id?: string;
+  route?: string;
+  latency_ms?: number;
+  trace_id?: string;
+  usage?: { prompt_tokens: number; completion_tokens: number };
+  low_confidence?: boolean;
+  answer_status?: MessageMetadata['answer_status'];
+  cited_indices?: number[];
+  citation_count?: number;
+  aborted?: boolean;
+  persisted?: boolean;
+}
+
 export interface StreamHandlers {
+  onConversation?: (conversationId: string) => void;
   onStatus?: (stage: string, message: string) => void;
   onRoute?: (route: string) => void;
   onToken?: (text: string) => void;
   onSources?: (citations: Citation[]) => void;
-  onDone?: (payload: {
-    message_id?: string;
-    conversation_id?: string;
-    latency_ms?: number;
-    trace_id?: string;
-    usage?: { prompt_tokens: number; completion_tokens: number };
-  }) => void;
+  onDone?: (payload: StreamDonePayload) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
 
 export interface StreamChatOptions {
   conversationId?: string | undefined;
-  question: string;
+  question?: string | undefined;
+  regenerate?: boolean | undefined;
   handlers: StreamHandlers;
   signal?: AbortSignal | undefined;
 }
@@ -106,6 +132,7 @@ export async function submitFeedback(
 export async function streamChat({
   conversationId,
   question,
+  regenerate,
   handlers,
   signal,
 }: StreamChatOptions): Promise<void> {
@@ -127,6 +154,7 @@ export async function streamChat({
       body: JSON.stringify({
         conversation_id: conversationId,
         question,
+        regenerate: regenerate || undefined,
       }),
     };
     if (signal) {
@@ -167,49 +195,38 @@ export async function streamChat({
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = '';
+  const parser = createSseParser((event, data) => {
+    const payload =
+      data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+
+    if (event === 'conversation' && typeof payload.conversation_id === 'string') {
+      handlers.onConversation?.(payload.conversation_id);
+    } else if (event === 'status' && payload.stage) {
+      handlers.onStatus?.(String(payload.stage), String(payload.message || ''));
+    } else if (event === 'route' && payload.route) {
+      handlers.onRoute?.(String(payload.route));
+    } else if (event === 'token' && typeof payload.text === 'string') {
+      handlers.onToken?.(payload.text);
+    } else if (event === 'sources' && Array.isArray(payload.citations)) {
+      handlers.onSources?.(payload.citations as Citation[]);
+    } else if (event === 'done') {
+      handlers.onDone?.(payload as StreamDonePayload);
+    } else if (event === 'error') {
+      handlers.onError?.({
+        code: String(payload.code || 'stream_error'),
+        message: String(payload.message || 'An error occurred during streaming'),
+      });
+    }
+  });
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-
-      let currentEvent = 'message';
-
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const rawData = line.slice(6).trim();
-          if (!rawData) continue;
-          try {
-            const data = JSON.parse(rawData);
-            if (currentEvent === 'status' && data.stage) {
-              handlers.onStatus?.(String(data.stage), String(data.message || ''));
-            } else if (currentEvent === 'route' && data.route) {
-              handlers.onRoute?.(String(data.route));
-            } else if (currentEvent === 'token' && typeof data.text === 'string') {
-              handlers.onToken?.(data.text);
-            } else if (currentEvent === 'sources' && Array.isArray(data.citations)) {
-              handlers.onSources?.(data.citations);
-            } else if (currentEvent === 'done') {
-              handlers.onDone?.(data);
-            } else if (currentEvent === 'error') {
-              handlers.onError?.({
-                code: String(data.code || 'stream_error'),
-                message: String(data.message || 'An error occurred during streaming'),
-              });
-            }
-          } catch {
-            // ignore partial json
-          }
-        }
-      }
+      parser.feed(decoder.decode(value, { stream: true }));
     }
+    parser.feed(decoder.decode());
+    parser.end();
   } finally {
     reader.releaseLock();
   }

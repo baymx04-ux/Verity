@@ -65,6 +65,7 @@ def test_fuse_rrf_combines_and_deduplicates() -> None:
     # c2 is rank 2 in vector
     # c3 is rank 1 in keyword
     from dataclasses import replace
+
     c1_kw = replace(c1, keyword_score=0.75)
     fused = fuse_rrf([c1, c2], [c3, c1_kw], k=60)
 
@@ -102,7 +103,7 @@ async def test_retrieval_service_confidence_gate(settings: Settings) -> None:
     service = RetrievalService(
         test_settings,
         embeddings=FakeEmbeddings(),  # type: ignore[arg-type]
-        store=FakeStore(),  # type: ignore[arg-type]
+        store=FakeStore(),
         reranker=LocalReranker(),
     )
 

@@ -10,6 +10,7 @@ interface ContextDrawerProps {
   selectedIndex: number | null;
   onSelectCitation: (index: number | null) => void;
   onClose?: () => void;
+  onOpenDocument?: ((documentId: string) => Promise<void>) | undefined;
 }
 
 export function ContextDrawer({
@@ -17,8 +18,11 @@ export function ContextDrawer({
   selectedIndex,
   onSelectCitation,
   onClose,
+  onOpenDocument,
 }: ContextDrawerProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
@@ -40,6 +44,19 @@ export function ContextDrawer({
     }
   };
 
+  const openDocument = async (documentId: string) => {
+    if (!onOpenDocument) return;
+    setOpeningDocumentId(documentId);
+    setOpenError(null);
+    try {
+      await onOpenDocument(documentId);
+    } catch {
+      setOpenError('The signed document link could not be created. Please try again.');
+    } finally {
+      setOpeningDocumentId(null);
+    }
+  };
+
   return (
     <aside
       aria-label="Source Evidence and Context Drawer"
@@ -56,7 +73,12 @@ export function ContextDrawer({
           )}
         </div>
         {onClose && (
-          <IconButton aria-label="Close source evidence" size="sm" variant="subtle" onClick={onClose}>
+          <IconButton
+            aria-label="Close source evidence"
+            size="sm"
+            variant="subtle"
+            onClick={onClose}
+          >
             <X className="size-4" aria-hidden="true" />
           </IconButton>
         )}
@@ -70,94 +92,118 @@ export function ContextDrawer({
             </span>
             <p className="text-label-md text-ink-700">No active sources</p>
             <p className="mt-1 max-w-xs text-body-sm leading-relaxed text-ink-500">
-              Select an answer or click any citation chip <span className="font-mono text-sky-700">[1]</span> to inspect referenced passages and verification checksums.
+              Select an answer or click a citation chip{' '}
+              <span className="font-mono text-sky-700">[1]</span> to inspect the passage, document,
+              and retrieval score.
             </p>
           </div>
         ) : (
-          citations.map((citation, idx) => {
-            const isSelected = selectedIndex === idx;
-            const scorePercent = Math.round(citation.score * 100);
-
-            return (
-              <div
-                key={citation.id || idx}
-                ref={(el) => {
-                  cardRefs.current[idx] = el;
-                }}
-                onClick={() => onSelectCitation(idx)}
-                className={`rounded-lg border transition-all cursor-pointer p-4 space-y-3 shadow-xs ${
-                  isSelected
-                    ? 'border-sky-400 ring-2 ring-sky-300/80 bg-sky-50/30'
-                    : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
+          <>
+            {openError && (
+              <p
+                role="alert"
+                className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700"
               >
-                <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="flex size-5 shrink-0 items-center justify-center rounded bg-sky-100 font-mono text-[11px] font-semibold text-sky-800">
-                      {idx + 1}
-                    </span>
-                    <span className="truncate text-xs font-semibold text-slate-800" title={citation.title}>
-                      {citation.title}
-                    </span>
-                    {citation.page !== null && (
-                      <span className="shrink-0 text-xs text-slate-400">• p.{citation.page}</span>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-[11px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    SHA-256 Valid
-                  </span>
-                </div>
+                {openError}
+              </p>
+            )}
+            {citations.map((citation, idx) => {
+              const isSelected = selectedIndex === idx;
+              const scorePercent = Math.round(citation.score * 100);
 
-                {citation.section && (
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
-                    Section: {citation.section}
-                  </p>
-                )}
-
-                <div className="p-3 bg-slate-50 rounded-md border border-slate-200/60 text-xs text-slate-600 leading-relaxed italic">
-                  “{citation.snippet}”
-                </div>
-
-                <div className="flex items-center justify-between pt-1 text-body-sm">
-                  <span className="text-[11px] text-ink-500">
-                    Match Confidence: <span className="font-medium text-ink-700">{scorePercent}%</span>
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copySnippet(citation.id, citation.snippet);
-                      }}
-                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
-                    >
-                      {copiedId === citation.id ? (
-                        <>
-                          <Check className="size-3 text-emerald-600" aria-hidden="true" />
-                          <span className="text-emerald-700">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="size-3" aria-hidden="true" />
-                          <span>Copy</span>
-                        </>
+              return (
+                <div
+                  key={citation.id || idx}
+                  ref={(el) => {
+                    cardRefs.current[idx] = el;
+                  }}
+                  onClick={() => onSelectCitation(idx)}
+                  className={`rounded-lg border transition-all cursor-pointer p-4 space-y-3 shadow-xs ${
+                    isSelected
+                      ? 'border-sky-400 ring-2 ring-sky-300/80 bg-sky-50/30'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-sky-100 font-mono text-[11px] font-semibold text-sky-800">
+                        {idx + 1}
+                      </span>
+                      <span
+                        className="truncate text-xs font-semibold text-slate-800"
+                        title={citation.title}
+                      >
+                        {citation.title}
+                      </span>
+                      {citation.page !== null && (
+                        <span className="shrink-0 text-xs text-slate-400">• p.{citation.page}</span>
                       )}
-                    </button>
-                    <a
-                      href={`/api/documents/${citation.document_id}/file`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-sky-700 hover:bg-sky-50"
-                    >
-                      <span>Open Doc</span>
-                      <ExternalLink className="size-3" aria-hidden="true" />
-                    </a>
+                    </div>
+                    <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-500">
+                      Score {scorePercent}%
+                    </span>
+                  </div>
+
+                  {citation.section && (
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
+                      Section: {citation.section}
+                    </p>
+                  )}
+
+                  <div className="p-3 bg-slate-50 rounded-md border border-slate-200/60 text-xs text-slate-600 leading-relaxed italic">
+                    “{citation.snippet}”
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 text-body-sm">
+                    <span className="text-[11px] text-ink-500">
+                      Retrieval score:{' '}
+                      <span className="font-medium text-ink-700">{scorePercent}%</span>
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void copySnippet(citation.id, citation.snippet);
+                        }}
+                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
+                      >
+                        {copiedId === citation.id ? (
+                          <>
+                            <Check className="size-3 text-emerald-600" aria-hidden="true" />
+                            <span className="text-emerald-700">Copied</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="size-3" aria-hidden="true" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                      {onOpenDocument && (
+                        <button
+                          type="button"
+                          disabled={openingDocumentId === citation.document_id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openDocument(citation.document_id);
+                          }}
+                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60"
+                        >
+                          <span>
+                            {openingDocumentId === citation.document_id
+                              ? 'Opening…'
+                              : 'Open document'}
+                          </span>
+                          <ExternalLink className="size-3" aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </>
         )}
       </div>
     </aside>

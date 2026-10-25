@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import pytest
 from app.core.config import Settings
@@ -11,6 +12,8 @@ from app.rag.types import AccessContext, Citation, RetrievalResult, RetrievedChu
 
 
 class FakeLLMClient(LLMClient):
+    name = "fake"
+
     def __init__(self, deltas: list[str]) -> None:
         self.deltas = deltas
 
@@ -55,14 +58,68 @@ async def test_chat_service_refusal_when_low_confidence(settings: Settings) -> N
     assert "sources" in event_names
     assert "done" in event_names
 
-    token_events = [e[1] for e in events if e[0] == "token"]
+    token_events = [cast(dict[str, Any], e[1]) for e in events if e[0] == "token"]
     assert token_events[0]["text"] == REFUSAL_ANSWER
 
-    sources_events = [e[1] for e in events if e[0] == "sources"]
+    sources_events = [cast(dict[str, Any], e[1]) for e in events if e[0] == "sources"]
     assert sources_events[0]["citations"] == []
 
-    done_events = [e[1] for e in events if e[0] == "done"]
+    done_events = [cast(dict[str, Any], e[1]) for e in events if e[0] == "done"]
     assert done_events[0]["low_confidence"] is True
+    assert done_events[0]["answer_status"] == "refused"
+
+
+@pytest.mark.asyncio
+async def test_chat_service_treats_model_refusal_as_low_confidence(settings: Settings) -> None:
+    chunk = RetrievedChunk(
+        id="c1",
+        document_id="d1",
+        title="Finance Report",
+        content="Quarterly revenue was 12 million.",
+        chunk_index=0,
+        score=0.8,
+    )
+    citation = Citation(
+        id="c1",
+        document_id="d1",
+        title="Finance Report",
+        page=None,
+        section=None,
+        snippet="Quarterly revenue was 12 million.",
+        score=0.8,
+    )
+
+    class MockRetrieval:
+        async def retrieve(self, question: str, access: AccessContext) -> RetrievalResult:
+            return RetrievalResult(
+                chunks=[chunk],
+                citations=[citation],
+                low_confidence=False,
+                best_score=0.8,
+            )
+
+    llm = FakeLLMClient([REFUSAL_ANSWER])
+    service = ChatService(settings, retrieval=MockRetrieval(), llm=llm)  # type: ignore[arg-type]
+
+    request = ChatRequest(
+        conversation_id=uuid.uuid4(),
+        question="What will revenue be next year?",
+        access_context=ChatAccessContext(user_id=uuid.uuid4(), role="analyst"),
+    )
+
+    events = [event async for event in service.stream(request)]
+    tokens = "".join(
+        str(cast(dict[str, Any], event[1])["text"]) for event in events if event[0] == "token"
+    )
+    assert tokens == REFUSAL_ANSWER
+
+    sources = cast(dict[str, Any], next(event[1] for event in events if event[0] == "sources"))
+    assert sources["citations"] == []
+
+    done = cast(dict[str, Any], next(event[1] for event in events if event[0] == "done"))
+    assert done["low_confidence"] is True
+    assert done["answer_status"] == "refused"
+    assert done["cited_indices"] == []
 
 
 @pytest.mark.asyncio
@@ -106,14 +163,17 @@ async def test_chat_service_streams_answer_with_citations(settings: Settings) ->
     )
 
     events = [event async for event in service.stream(request)]
-    tokens = "".join(e[1]["text"] for e in events if e[0] == "token")
+    token_payloads = [cast(dict[str, Any], e[1]) for e in events if e[0] == "token"]
+    tokens = "".join(str(payload["text"]) for payload in token_payloads)
     assert tokens == "Employees receive 25 days of paid vacation [1]."
 
-    sources = next(e[1] for e in events if e[0] == "sources")
+    sources = cast(dict[str, Any], next(e[1] for e in events if e[0] == "sources"))
     assert len(sources["citations"]) == 1
     assert sources["citations"][0]["id"] == "c1"
 
-    done = next(e[1] for e in events if e[0] == "done")
+    done = cast(dict[str, Any], next(e[1] for e in events if e[0] == "done"))
     assert done["low_confidence"] is False
+    assert done["answer_status"] == "answered"
+    assert done["cited_indices"] == [1]
     assert done["usage"]["prompt_tokens"] == 50
     assert done["usage"]["completion_tokens"] == 20

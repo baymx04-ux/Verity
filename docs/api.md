@@ -3,8 +3,8 @@
 **Base URL:** `/api` (nginx proxies to the gateway; Vite proxies in development).
 **Implemented:** health, authentication, refresh rotation, logout, `/me`, admin
 user/role/group endpoints, document upload/list/detail/download/edit/retry/delete,
-and the internal AI ingestion contract. Chat/SSE and SQL endpoints land in later
-phases.
+the internal AI ingestion contract, conversations, grounded chat over SSE, feedback,
+and the internal AI chat contract. SQL endpoints land in Phase 4.
 
 ## Authentication
 
@@ -223,6 +223,174 @@ returns `404 not_found`.
 | `GET`  | `/api/admin/groups`  | List groups with `document_count` for the access editor  |
 | `GET`  | `/api/admin/metrics` | Document/chunk counts and last successful ingestion time |
 
+## Chat and SSE
+
+All chat endpoints require `Authorization: Bearer <token>`. Conversations are
+owned by the caller; history and delete requests for another user's conversation
+return `404` rather than revealing that it exists, while the stream reports the
+same condition as an in-band SSE error. Chat streams are limited per
+authenticated user by `CHAT_RATE_LIMIT_PER_MIN` (default 20/minute), separately
+from the global API limit. Retrieval access control is applied inside the AI
+service using the caller's role and live group memberships. See
+[`retrieval.md`](./retrieval.md) for the pipeline.
+
+| Method   | Path                              | Purpose                                       |
+| -------- | --------------------------------- | --------------------------------------------- |
+| `GET`    | `/api/conversations`              | List the caller's conversations, newest first |
+| `POST`   | `/api/conversations`              | Create an empty conversation                  |
+| `GET`    | `/api/conversations/:id/messages` | Full message history with citations/metadata  |
+| `DELETE` | `/api/conversations/:id`          | Delete the conversation and its messages      |
+| `POST`   | `/api/chat/stream`                | Ask or regenerate an answer over SSE          |
+| `POST`   | `/api/messages/:id/feedback`      | Record or replace thumbs up/down feedback     |
+
+### Conversations
+
+`POST /api/conversations` accepts an optional `title` (max 100 characters) and
+returns `201`:
+
+```json
+{
+  "conversation": {
+    "id": "<uuid>",
+    "user_id": "<uuid>",
+    "title": "New conversation",
+    "created_at": "2026-10-26T09:00:00.000Z",
+    "updated_at": "2026-10-26T09:00:00.000Z"
+  }
+}
+```
+
+`GET /api/conversations` returns `{ "conversations": [...] }` ordered by
+`updated_at` descending. `GET /api/conversations/:id/messages` returns
+`{ "messages": [...] }` in chronological order:
+
+```json
+{
+  "messages": [
+    {
+      "id": "<uuid>",
+      "conversation_id": "<uuid>",
+      "role": "assistant",
+      "content": "Employees receive 25 days of annual leave [1].",
+      "route": "documents",
+      "citations": [
+        {
+          "id": "<chunk-uuid>",
+          "document_id": "<document-uuid>",
+          "title": "Employee Handbook",
+          "page": 12,
+          "section": "Annual leave",
+          "snippet": "All permanent employees accrue 25 days…",
+          "score": 0.82
+        }
+      ],
+      "sql_query": null,
+      "sql_result_preview": null,
+      "trace_id": "<trace>",
+      "latency_ms": 1840,
+      "prompt_tokens": 1200,
+      "completion_tokens": 85,
+      "metadata": {
+        "answer_status": "answered",
+        "aborted": false,
+        "low_confidence": false,
+        "cited_indices": [1],
+        "citation_count": 1,
+        "model": "gemini-2.5-flash"
+      },
+      "feedback": { "rating": 1, "comment": null },
+      "created_at": "2026-10-26T09:00:02.000Z"
+    }
+  ]
+}
+```
+
+`DELETE /api/conversations/:id` returns `204`; a missing or foreign conversation
+returns `404 not_found`.
+
+### `POST /api/chat/stream`
+
+```json
+{ "conversation_id": "<uuid>", "question": "What is the leave policy?" }
+```
+
+- `question` is required unless `regenerate` is `true`; maximum 4000 characters.
+- Omitting `conversation_id` creates a conversation and titles it from the first
+  60 characters of the question. The new id is sent immediately in a
+  `conversation` event.
+- `regenerate: true` requires `conversation_id`. The gateway reuses the most
+  recent user message and replaces the latest assistant message rather than
+  adding a duplicate user turn.
+- Validation failures return `400 invalid_request` as JSON before streaming
+  starts. Once headers are sent, ownership and generation failures arrive as SSE
+  `error` events.
+
+The response is `text/event-stream` with `Cache-Control: no-cache, no-transform`
+and `X-Accel-Buffering: no`. The gateway also writes a `: ping` comment every
+15 seconds so an idle generation is not closed by a proxy.
+
+```text
+event: conversation
+data: {"conversation_id":"<uuid>"}
+
+event: status
+data: {"stage":"retrieving","message":"Searching accessible documents…"}
+
+event: route
+data: {"route":"documents"}
+
+event: token
+data: {"text":"Employees receive 25 days"}
+
+event: sources
+data: {"citations":[{"id":"<chunk-uuid>","document_id":"<document-uuid>","title":"Employee Handbook","page":12,"section":"Annual leave","snippet":"All permanent employees accrue 25 days…","score":0.82}]}
+
+event: done
+data: {"message_id":"<uuid>","conversation_id":"<uuid>","route":"documents","trace_id":"<trace>","latency_ms":1840,"usage":{"prompt_tokens":1200,"completion_tokens":85},"low_confidence":false,"answer_status":"answered","cited_indices":[1],"citation_count":1,"aborted":false,"persisted":true}
+```
+
+| Event          | Payload                                                                    | When                                   |
+| -------------- | -------------------------------------------------------------------------- | -------------------------------------- |
+| `conversation` | `{ "conversation_id": string }`                                            | Immediately after the thread is known  |
+| `status`       | `{ "stage": "rewriting" \| "retrieving" \| "writing", "message": string }` | Progress updates                       |
+| `route`        | `{ "route": "documents" }`                                                 | Before retrieval (Phase 3 is RAG-only) |
+| `token`        | `{ "text": string }`                                                       | Streamed answer chunks                 |
+| `sources`      | `{ "citations": Citation[] }`                                              | After retrieval or before `done`       |
+| `error`        | `{ "code": string, "message": string }`                                    | Recoverable or fatal stream error      |
+| `done`         | `{ message_id, conversation_id, route, trace_id, latency_ms, usage, ... }` | Successful completion only             |
+
+`citation` objects contain `id` (chunk id), `document_id`, `title`, `page`,
+`section`, `snippet`, and a 0–1 `score`. Inline `[n]` markers map to the entries
+in the `sources` array by order. Markers that do not map to a retrieved chunk are
+removed before the token reaches the browser.
+
+Refusals are a normal answer, not an error: the refusal text streams as tokens,
+`sources` is empty, and `done.answer_status` is `refused` with
+`low_confidence: true`. `answer_status` is `uncited` when the model answered but
+cited nothing.
+
+If the client aborts the request, the gateway stops the upstream stream, persists
+any non-empty partial answer with `metadata.answer_status = "aborted"`, and does
+not emit `done`. A generation failure emits `error` and persists partial text with
+`answer_status = "error"` when there is any. `done.persisted` reports whether the
+assistant row was stored. The upstream AI `done` event is consumed and never
+relayed, so the browser sees exactly one terminal event.
+
+Stream error codes include `retrieval_failed`, `generation_failed`,
+`internal_error`, `not_found`, and `stream_error`. The web client adds
+`http_error` and `network_error` locally for transport failures.
+
+### `POST /api/messages/:id/feedback`
+
+```json
+{ "rating": 1, "comment": "Clear and cited" }
+```
+
+`rating` must be `1` or `-1`; `comment` is optional and limited to 2000
+characters. Feedback is upserted per `(message, user)`, so clicking again replaces
+the previous value. Returns `{ "feedback": { ... } }`. A message in another
+user's conversation returns `404 not_found`.
+
 ## Health
 
 `GET /api/health`
@@ -271,30 +439,20 @@ All non-SSE errors share one shape:
 | 429  | `rate_limited`    | Limit exceeded                               |
 | 500  | `internal_error`  | Unhandled server error; details stay in logs |
 
-## Streaming (planned, Phase 3)
+## Streaming notes
 
-Chat responses use `text/event-stream`. Event names and payloads are defined in
-`plan.md` §10:
-
-```text
-event: status   data: {"stage":"retrieving"}
-event: route    data: {"route":"rag"}
-event: token    data: {"text":"..."}
-event: sources  data: {"sources":[...]}
-event: sql      data: {"sql":"SELECT ...","rows":[...],"truncated":false}
-event: error    data: {"code":"low_confidence","message":"..."}
-event: done     data: {"message_id":"...","trace_id":"..."}
-```
-
-nginx disables proxy buffering and sets `X-Accel-Buffering: no` so tokens arrive
-incrementally. The contract will be implemented with Zod schemas shared by tests
-and documented here before the frontend consumes it.
+Chat is the only streaming endpoint. nginx disables proxy buffering and the
+service sets `X-Accel-Buffering: no`, so tokens arrive incrementally. Both the
+gateway and the web client use a small SSE parser that preserves the event name
+across arbitrary chunk boundaries, ignores comment heartbeats, tolerates CRLF,
+and skips malformed JSON frames instead of ending the stream.
 
 ## Internal AI contract
 
 The AI service is internal-only (Compose `expose`, no host port). The worker
-calls it at `AI_SERVICE_URL`; the browser never does. Every ingestion/deletion
-request is signed with `INTERNAL_SERVICE_TOKEN` using HMAC-SHA256.
+calls it at `AI_SERVICE_URL`; the gateway calls `/chat/stream`; the browser never
+does. Every ingestion/deletion/chat request is signed with
+`INTERNAL_SERVICE_TOKEN` using HMAC-SHA256.
 
 Headers:
 
@@ -305,7 +463,7 @@ Headers:
 
 For bodies, the body hash is the SHA-256 of the exact JSON bytes sent. An empty
 DELETE body hashes the empty byte string. Paths are the AI-service paths
-(`/ingest`, `/documents/{id}`), not the public gateway paths.
+(`/ingest`, `/documents/{id}`, `/chat/stream`), not the public gateway paths.
 
 ### `POST /ingest`
 
@@ -351,10 +509,41 @@ Deletes all chunks for the document and returns:
 The gateway calls this before deleting the document row. A missing document
 simply yields `chunks_deleted: 0`.
 
+### `POST /chat/stream`
+
+Signed streaming request from the gateway:
+
+```json
+{
+  "conversation_id": "<uuid>",
+  "question": "What is the leave policy?",
+  "access_context": {
+    "user_id": "<uuid>",
+    "role": "viewer",
+    "group_ids": ["<uuid>"]
+  },
+  "history": [
+    { "role": "user", "content": "Tell me about benefits" },
+    { "role": "assistant", "content": "Benefits include…" }
+  ],
+  "trace_id": "optional-upstream-trace"
+}
+```
+
+The AI service rewrites follow-ups when history exists, retrieves with the
+caller's access context, reranks, applies the confidence gate, and streams
+`sources`/`done` with citation indices, model, retrieval scores, and stage spans.
+It emits the same `status`, `route`, `token`, `sources`, `error`, and `done`
+events documented above; the `conversation` event is gateway-only. The AI service
+does not write conversations or messages — the gateway owns persistence,
+abort handling, and the terminal `done` relayed to the browser.
+
+Cancelling the HTTP request cancels the upstream generation. Retrieval access is
+enforced in SQL from the requesting user's role and current group memberships;
+the `group_ids` field is informational and is not trusted as the authorization
+source.
+
 ### `GET /health`
 
 Public inside the Compose network. Reports Postgres, Redis, and MinIO
 availability for orchestration health checks.
-
-Streaming chat responses (Phase 3) will be proxied by the gateway, not buffered
-or re-emitted by the AI service.

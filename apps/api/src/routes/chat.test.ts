@@ -31,7 +31,7 @@ describe('chat, conversations, and feedback api', () => {
     const app = express();
     app.use(express.json());
     app.use(optionalAuthenticate(config, logger));
-    app.use('/api/chat', createChatRouter({ chatService, logger }));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
 
     const res = await request(app).post('/api/chat/stream').send({ question: 'Hello' });
     expect(res.status).toBe(401);
@@ -45,7 +45,7 @@ describe('chat, conversations, and feedback api', () => {
     const app = express();
     app.use(express.json());
     app.use(optionalAuthenticate(config, logger));
-    app.use('/api/chat', createChatRouter({ chatService, logger }));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
 
     const res = await request(app)
       .post('/api/chat/stream')
@@ -62,7 +62,7 @@ describe('chat, conversations, and feedback api', () => {
     const userId = '33333333-3333-3333-3333-333333333333';
 
     const pool = {
-      query: vi.fn(async (sql: string, params: unknown[]) => {
+      query: vi.fn(async (sql: string, _params: unknown[]) => {
         if (sql.includes('INSERT INTO app.conversations')) {
           return {
             rows: [
@@ -103,7 +103,7 @@ describe('chat, conversations, and feedback api', () => {
     const app = express();
     app.use(express.json());
     app.use(optionalAuthenticate(config, logger));
-    app.use('/api/chat', createChatRouter({ chatService, logger }));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
 
     const res = await request(app)
       .post('/api/chat/stream')
@@ -117,6 +117,53 @@ describe('chat, conversations, and feedback api', () => {
     expect(res.text).toContain('You get 25 days.');
     expect(res.text).toContain('event: done');
     expect(res.text).toContain(messageId);
+
+    // The upstream done event is suppressed; the gateway emits one done after
+    // persistence so the browser cannot append the same assistant message twice.
+    expect(res.text.match(/event: done/g)).toHaveLength(1);
+  });
+
+  it('returns an in-band error for a conversation owned by another user', async () => {
+    const pool = {
+      query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
+    } as unknown as Pool;
+
+    const chatService = new ChatService(pool, createAiClientStub(), logger);
+
+    const app = express();
+    app.use(express.json());
+    app.use(optionalAuthenticate(config, logger));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .set('Authorization', auth('viewer'))
+      .send({
+        conversation_id: '11111111-1111-1111-1111-111111111111',
+        question: 'What is the policy?',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('event: error');
+    expect(res.text).toContain('not_found');
+  });
+
+  it('requires a conversation id when regenerating', async () => {
+    const pool = { query: vi.fn() } as unknown as Pool;
+    const chatService = new ChatService(pool, createAiClientStub(), logger);
+
+    const app = express();
+    app.use(express.json());
+    app.use(optionalAuthenticate(config, logger));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .set('Authorization', auth('analyst'))
+      .send({ regenerate: true });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_request');
   });
 
   it('manages conversations CRUD', async () => {

@@ -3,6 +3,7 @@ import {
   Clock,
   Copy,
   FileSearch,
+  RotateCcw,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
@@ -27,6 +28,7 @@ interface MessageItemProps {
   onSelectCitation: (index: number) => void;
   onFeedback: (messageId: string, rating: 1 | -1, comment?: string) => Promise<void>;
   userEmail?: string | undefined;
+  onRegenerate?: (() => void) | undefined;
 }
 
 export function MessageItem({
@@ -35,6 +37,7 @@ export function MessageItem({
   onSelectCitation,
   onFeedback,
   userEmail,
+  onRegenerate,
 }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const [commentDialogOpen, setCommentDialogOpen] = useState(false);
@@ -125,7 +128,7 @@ export function MessageItem({
             <span className="font-medium text-slate-700">{userEmail || 'You'}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="neutral">Auto Routed</Badge>
+            <Badge variant="neutral">Question</Badge>
             <time className="text-[11px] text-ink-400">
               {new Date(message.created_at).toLocaleTimeString([], {
                 hour: '2-digit',
@@ -144,7 +147,20 @@ export function MessageItem({
     );
   }
 
-  const isRefusal = message.content.includes("I don't have enough information");
+  const metadata = message.metadata ?? {};
+  const isRefusal =
+    metadata.answer_status === 'refused' ||
+    message.content.includes("I don't have enough information");
+  const isAborted = metadata.answer_status === 'aborted' || metadata.aborted === true;
+  const isError = metadata.answer_status === 'error';
+
+  const answerLabel = isAborted
+    ? 'Stopped'
+    : isError
+      ? 'Generation failed'
+      : isRefusal
+        ? 'Insufficient evidence'
+        : 'Grounded answer';
 
   return (
     <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs sm:p-5">
@@ -153,17 +169,23 @@ export function MessageItem({
           <span className="flex size-6 items-center justify-center rounded-full bg-sky-50 text-sky-600">
             <Sparkles className="size-3.5" aria-hidden="true" />
           </span>
-          <span className="font-semibold text-slate-800">Verity Engine</span>
+          <span className="font-semibold text-slate-800">Verity</span>
           <span className="text-slate-300">•</span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 font-medium">
+          <span
+            className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-medium ${
+              isAborted || isError
+                ? 'border-amber-200/60 bg-amber-50 text-amber-700'
+                : 'border-emerald-200/60 bg-emerald-50 text-emerald-700'
+            }`}
+          >
             <ShieldCheck className="size-3" aria-hidden="true" />
-            Attested Answer
+            {answerLabel}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {message.route && (
             <Badge variant={message.route === 'documents' ? 'info' : 'live'}>
-              {message.route === 'documents' ? 'Documents Match' : message.route}
+              {message.route === 'documents' ? 'Documents' : message.route}
             </Badge>
           )}
           {message.latency_ms && (
@@ -188,6 +210,16 @@ export function MessageItem({
           </div>
         ) : (
           renderContent(message.content, message.citations || [])
+        )}
+        {isAborted && (
+          <p className="mt-2 text-[11px] text-amber-700">
+            Generation was stopped. The partial answer above was saved.
+          </p>
+        )}
+        {isError && (
+          <p className="mt-2 text-[11px] text-amber-700">
+            Generation failed before the answer completed.
+          </p>
         )}
       </div>
 
@@ -228,6 +260,16 @@ export function MessageItem({
               Trace: {message.trace_id.slice(0, 8)}…
             </span>
           )}
+          {onRegenerate && (
+            <button
+              type="button"
+              onClick={onRegenerate}
+              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+              <span>Regenerate</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCopy}
@@ -252,7 +294,7 @@ export function MessageItem({
         open={commentDialogOpen}
         onClose={() => setCommentDialogOpen(false)}
         title="Leave Answer Feedback"
-        description="Your feedback helps calibrate document retrieval accuracy and citation scoring."
+        description="Your feedback is stored with this answer for later review."
       >
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-label-md">

@@ -3,9 +3,11 @@ import hmac
 import json
 import time
 import uuid
+from collections.abc import AsyncIterator
 
 import pytest
 from app.core.config import Settings
+from app.llm.base import LLMDelta
 from fastapi.testclient import TestClient
 
 TOKEN = "test-internal-token"
@@ -49,9 +51,7 @@ def chat_client(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> TestClie
 
     monkeypatch.setattr("app.rag.retrieval.RetrievalService.retrieve", fake_retrieve)
 
-    async def fake_stream(*args: object, **kwargs: object):
-        from app.llm.base import LLMDelta
-
+    async def fake_stream(*args: object, **kwargs: object) -> AsyncIterator[LLMDelta]:
         yield LLMDelta(text="Answer from doc [1].", prompt_tokens=10, completion_tokens=5)
 
     monkeypatch.setattr(app.state.chat_service._llm, "stream", fake_stream)

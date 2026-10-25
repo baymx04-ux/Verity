@@ -1,10 +1,4 @@
-import {
-  History,
-  MessageSquare,
-  MessageSquarePlus,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { History, MessageSquare, MessageSquarePlus, Trash2, X } from 'lucide-react';
 import { IconButton } from '../../components/ui/icon-button';
 import { Tooltip } from '../../components/ui/tooltip';
 import type { Conversation } from './chat-api';
@@ -69,7 +63,7 @@ export function ConversationRail({
             </span>
             <p className="text-label-md text-ink-700">No conversations yet</p>
             <p className="mt-1 max-w-44 text-body-sm leading-[1.3rem] text-ink-500">
-              Ask your first question to begin a verified thread.
+              Ask your first question to start a conversation.
             </p>
           </div>
         ) : (
@@ -125,7 +119,7 @@ export function ConversationRail({
       </div>
 
       <div className="border-t border-line px-4 py-3 text-body-sm text-ink-500 flex items-center justify-between">
-        <span className="text-xs">Phase 3 · grounded chat</span>
+        <span className="text-xs">Document chat</span>
         <span className="inline-flex size-2 rounded-full bg-emerald-500" title="Online" />
       </div>
     </aside>

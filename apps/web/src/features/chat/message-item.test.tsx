@@ -1,0 +1,105 @@
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { ChatMessage, Citation } from './chat-api';
+import { MessageItem } from './message-item';
+
+const citation: Citation = {
+  id: 'chunk-1',
+  document_id: 'doc-1',
+  title: 'Employee Handbook',
+  page: 5,
+  section: 'Leave policy',
+  snippet: 'Employees receive 25 days of paid vacation annually.',
+  score: 0.92,
+};
+
+function assistantMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  return {
+    id: 'message-1',
+    conversation_id: 'conversation-1',
+    role: 'assistant',
+    content: 'Employees receive 25 days of paid vacation [1].',
+    route: 'documents',
+    citations: [citation],
+    trace_id: 'trace-1234567890',
+    latency_ms: 420,
+    metadata: { answer_status: 'answered', low_confidence: false },
+    created_at: '2026-10-01T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function renderMessage(message: ChatMessage, overrides: Record<string, unknown> = {}) {
+  return render(
+    <MessageItem
+      message={message}
+      selectedCitationIndex={null}
+      onSelectCitation={vi.fn()}
+      onFeedback={vi.fn(async () => undefined)}
+      userEmail="analyst@verity.dev"
+      {...overrides}
+    />,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('MessageItem citations', () => {
+  it('renders inline citation chips that map to the retrieved source', async () => {
+    const onSelectCitation = vi.fn();
+    renderMessage(assistantMessage(), { onSelectCitation });
+
+    const chip = screen.getByRole('button', { name: /\[1\]/i });
+    expect(chip).toHaveAttribute('title', 'Employee Handbook · p. 5');
+
+    await userEvent.click(chip);
+    expect(onSelectCitation).toHaveBeenCalledWith(0);
+  });
+
+  it('labels a refusal honestly and does not claim attestation', () => {
+    renderMessage(
+      assistantMessage({
+        content:
+          "I don't have enough information to answer that from the documents you can access.",
+        metadata: { answer_status: 'refused', low_confidence: true },
+        citations: [],
+      }),
+    );
+
+    expect(screen.getByText('Insufficient document evidence')).toBeInTheDocument();
+    expect(screen.getByText('Insufficient evidence')).toBeInTheDocument();
+    expect(screen.queryByText(/attested/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sha-256/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a stopped partial answer', () => {
+    renderMessage(
+      assistantMessage({
+        content: 'Employees receive',
+        metadata: { answer_status: 'aborted', aborted: true },
+      }),
+    );
+
+    expect(screen.getByText('Stopped')).toBeInTheDocument();
+    expect(screen.getByText(/Generation was stopped/)).toBeInTheDocument();
+  });
+
+  it('copies the answer and exposes regenerate on the latest answer', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const onRegenerate = vi.fn();
+
+    renderMessage(assistantMessage(), { onRegenerate });
+
+    await userEvent.click(screen.getByRole('button', { name: /copy/i }));
+    expect(writeText).toHaveBeenCalledWith('Employees receive 25 days of paid vacation [1].');
+    expect(await screen.findByText('Copied')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+    expect(onRegenerate).toHaveBeenCalledOnce();
+  });
+});

@@ -4,13 +4,14 @@ Verity is a single-tenant, role-based enterprise knowledge base: RAG over intern
 documents plus a guarded text-to-SQL layer over live business data. Every answer
 is designed to show its evidence — cited document chunks or the SQL that ran.
 
-**Current state:** Phases 0–2 are implemented. Auth, RBAC, the design system,
-the app shell, document upload, MinIO storage, the BullMQ ingestion worker, AI
-parsing/chunking/embedding, and the documents library are in place and covered by
-the Node and Python suites. Docker Compose startup is config-validated but a full
-cold-start run is still deferred to Phase 7. Retrieval, chat, and SQL arrive in
-later phases. See [`plan.md`](./plan.md) for behavior and [`design.md`](./design.md)
-for the visual system.
+**Current state:** Phases 0–3 are implemented. Auth, RBAC, the design system, the
+app shell, document upload, MinIO storage, the BullMQ ingestion worker, AI
+parsing/chunking/embedding, the documents library, hybrid retrieval, reranking,
+and grounded SSE chat are in place and covered by the Node and Python suites.
+Docker Compose startup is config-validated but a full cold-start run is still
+deferred to Phase 7, and the time-to-first-token target has not yet been measured
+against a live model. Text-to-SQL arrives in Phase 4. See [`plan.md`](./plan.md)
+for behavior and [`design.md`](./design.md) for the visual system.
 
 ## Quick start
 
@@ -60,6 +61,21 @@ Supported uploads: PDF, DOCX, TXT, MD, and HTML up to `UPLOAD_MAX_MB` (default
 25 MB) each. The documents page accepts multiple files and shows per-file
 progress. See [`docs/ingestion.md`](./docs/ingestion.md) for the pipeline.
 
+### Asking questions
+
+Open **Ask Verity** after signing in. Suggested prompts include the employee
+annual-leave policy, damaged-goods returns, delivery SLAs, and remote-work
+equipment expenses. Answers stream from the AI service through the gateway, cite
+the accessible passages they use, and show the retrieved sources in the evidence
+drawer.
+
+The default answer model is `gemini-2.5-flash` (`LLM_MODEL`). Retrieval and the
+confidence gate still work without generation when embeddings or the model are
+unavailable, but live answers require a valid `GOOGLE_API_KEY`. No latency or
+quality numbers are claimed until the demo corpus has been indexed and measured
+end to end. See [`docs/retrieval.md`](./docs/retrieval.md) for the pipeline and
+[`docs/api.md`](./docs/api.md#chat-and-sse) for the stream contract.
+
 The values in `.env.example` are **development-only placeholders**. Change every
 `change-me` value before exposing the stack beyond your machine. `.env` is
 gitignored; never commit it.
@@ -101,6 +117,19 @@ and MinIO volumes, including uploaded documents.
 - Documents UI: drag/drop multi-upload with per-file progress, search/filter/
   pagination, four-second status polling, status and access badges, detail drawer,
   signed download, admin access/group editing, retry, and delete confirmation.
+- Retrieval: follow-up query rewriting, role/group access predicates applied
+  inside both SQL arms, pgvector cosine search plus Postgres full-text search,
+  Reciprocal Rank Fusion, configurable reranking (`none`, `local`, or Cohere), and
+  a score-based confidence gate. See [`docs/retrieval.md`](./docs/retrieval.md).
+- Chat: persistent conversations owned per user, latest-20-turn history, SSE
+  streaming with status/route/token/sources events, inline `[n]` citation
+  validation, honest refusal for weak evidence, stop, retry, regenerate, copy,
+  thumbs up/down feedback, and a source drawer with real page/section/score
+  metadata and a fresh signed document link.
+- Chat failure handling: the gateway persists partial answers on stop or stream
+  failure with `answer_status` (`aborted` / `error`), suppresses the upstream
+  `done` event so the client never renders a duplicate, and sends a 15-second
+  heartbeat so idle generations survive intermediaries.
 - Postgres 16 + pgvector with `app`, `business`, and `business_ro` schemas.
 - Two least-privilege login roles, verified by `make verify-roles`:
   - `verity_app`: CONNECT + DML on `app`; no DDL, no `business_ro`.
@@ -115,7 +144,10 @@ and MinIO volumes, including uploaded documents.
   validation), the app shell/router, documents UI (upload, filters, access edits,
   delete), gateway error/health contract, upload validation, document access
   filtering, deletion order/cascade, ingestion status and failure classification,
-  and AI health/config/parsing/chunking/embedding/signed requests.
+  AI health/config/parsing/chunking/embedding/signed requests, RRF fusion,
+  retrieval access predicates and the confidence gate, citation validation,
+  refusal behaviour, SSE parsing on both Node and web, chat abort/regenerate
+  persistence, and RTL chat citations/feedback.
 - ESLint, Prettier, Ruff, mypy strict, Vitest, pytest, and a GitHub Actions CI
   skeleton with a dependency audit.
 
@@ -208,16 +240,16 @@ make audit           # npm audit + pip-audit
 
 ## Roadmap
 
-| Phase | Scope                                                   | Status                                    |
-| ----- | ------------------------------------------------------- | ----------------------------------------- |
-| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred   |
-| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green |
-| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green |
-| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Next                                      |
-| 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                   |
-| 5     | Router, hybrid answers, conversation memory             | Planned                                   |
-| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                   |
-| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                   |
+| Phase | Scope                                                   | Status                                      |
+| ----- | ------------------------------------------------------- | ------------------------------------------- |
+| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred     |
+| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green   |
+| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green   |
+| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; live TTFT measurement deferred |
+| 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                     |
+| 5     | Router, hybrid answers, conversation memory             | Planned                                     |
+| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                     |
+| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                     |
 
 ## Design and delivery decisions
 
@@ -239,4 +271,5 @@ make audit           # npm audit + pip-audit
 - [`docs/implementation-plan.md`](./docs/implementation-plan.md) — phases, risks, conflict resolutions, open questions
 - [`docs/architecture.md`](./docs/architecture.md) — services, schemas, roles, startup order
 - [`docs/ingestion.md`](./docs/ingestion.md) — document pipeline, storage layout, chunking, statuses, demo corpus
-- [`docs/api.md`](./docs/api.md) — public error/health contract and planned SSE shape
+- [`docs/retrieval.md`](./docs/retrieval.md) — hybrid retrieval, reranking, confidence gate, chat streaming
+- [`docs/api.md`](./docs/api.md) — public error/health contract, chat SSE, and the internal AI contract

@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import type { InternalAiClient } from '../ai-client/internal';
 import type { Logger } from '../config/logger';
 import type { AuthUser } from '../types/auth';
+import { createSseParser } from './sse';
 
 export interface ConversationRow {
   id: string;
@@ -22,6 +23,19 @@ export interface MessageCitation {
   score: number;
 }
 
+export interface MessageMetadata {
+  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error';
+  aborted?: boolean;
+  low_confidence?: boolean;
+  model?: string;
+  spans?: Record<string, number>;
+  cited_indices?: number[];
+  citation_count?: number;
+  retrieval?: { best_score?: number; candidates?: number };
+  error_code?: string;
+  [key: string]: unknown;
+}
+
 export interface MessageRow {
   id: string;
   conversation_id: string;
@@ -35,6 +49,7 @@ export interface MessageRow {
   latency_ms: number | null;
   prompt_tokens: number | null;
   completion_tokens: number | null;
+  metadata: MessageMetadata;
   feedback?: { rating: number; comment: string | null } | null;
   created_at: string;
 }
@@ -51,7 +66,8 @@ export interface FeedbackRow {
 export interface StreamChatOptions {
   user: AuthUser;
   conversationId?: string | undefined;
-  question: string;
+  question?: string | undefined;
+  regenerate?: boolean | undefined;
   onEvent: (event: string, data: unknown) => void;
   signal?: AbortSignal | undefined;
 }
@@ -128,13 +144,14 @@ export class ChatService {
       latency_ms: number | null;
       prompt_tokens: number | null;
       completion_tokens: number | null;
+      metadata: MessageMetadata | null;
       rating: number | null;
       comment: string | null;
       created_at: string;
     }>(
       `SELECT m.id, m.conversation_id, m.role, m.content, m.route, m.citations,
               m.sql_query, m.sql_result_preview, m.trace_id, m.latency_ms,
-              m.prompt_tokens, m.completion_tokens, m.created_at,
+              m.prompt_tokens, m.completion_tokens, m.metadata, m.created_at,
               f.rating, f.comment
        FROM app.messages m
        LEFT JOIN app.feedback f ON f.message_id = m.id AND f.user_id = $2
@@ -156,6 +173,10 @@ export class ChatService {
       latency_ms: row.latency_ms,
       prompt_tokens: row.prompt_tokens,
       completion_tokens: row.completion_tokens,
+      metadata:
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? row.metadata
+          : {},
       feedback: row.rating ? { rating: row.rating, comment: row.comment } : null,
       created_at: row.created_at,
     }));
@@ -196,45 +217,99 @@ export class ChatService {
   }
 
   async streamChat(options: StreamChatOptions): Promise<void> {
-    const { user, question, onEvent, signal } = options;
+    const { user, onEvent, signal } = options;
+    const regenerate = options.regenerate === true;
     let convId = options.conversationId;
+    let prompt = (options.question ?? '').trim();
+    let createdNew = false;
 
-    if (convId) {
-      const conv = await this.getConversation(user.id, convId);
-      if (!conv) {
+    if (!convId) {
+      if (regenerate) {
+        throw new Error('A conversation is required to regenerate an answer.');
+      }
+      if (!prompt) {
+        throw new Error('A question is required.');
+      }
+      const created = await this.createConversation(user.id, prompt.slice(0, 60));
+      convId = created.id;
+      createdNew = true;
+    } else {
+      const conversation = await this.getConversation(user.id, convId);
+      if (!conversation) {
         throw new Error('Conversation not found');
       }
-    } else {
-      const derivedTitle = question.trim().slice(0, 60) || 'New question';
-      const created = await this.createConversation(user.id, derivedTitle);
-      convId = created.id;
     }
 
-    this.logger.debug({ userId: user.id, convId }, 'starting chat stream');
+    if (regenerate) {
+      const lastUser = await this.pool.query<{ content: string }>(
+        `SELECT content
+         FROM app.messages
+         WHERE conversation_id = $1 AND role = 'user'
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+        [convId],
+      );
+      prompt = lastUser.rows[0]?.content?.trim() ?? '';
+      if (!prompt) {
+        throw new Error('There is no earlier question to regenerate.');
+      }
 
-    // Save user question to database
-    await this.pool.query(
-      `INSERT INTO app.messages (conversation_id, role, content)
-       VALUES ($1, 'user', $2)`,
-      [convId, question.trim()],
-    );
+      // Replace the previous answer instead of appending a second one. Only
+      // remove it when it is the most recent message; a failed earlier attempt
+      // may have left the user turn last.
+      const lastMessage = await this.pool.query<{ id: string; role: string }>(
+        `SELECT id, role
+         FROM app.messages
+         WHERE conversation_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT 1`,
+        [convId],
+      );
+      const previous = lastMessage.rows[0];
+      if (previous?.role === 'assistant') {
+        await this.pool.query(`DELETE FROM app.messages WHERE id = $1`, [previous.id]);
+      }
+    } else if (!prompt) {
+      throw new Error('A question is required.');
+    }
 
-    // Fetch previous messages for conversation history
-    const historyResult = await this.pool.query<{ role: 'user' | 'assistant'; content: string }>(
-      `SELECT role, content
-       FROM app.messages
-       WHERE conversation_id = $1
-       ORDER BY created_at ASC
-       LIMIT 20`,
-      [convId],
-    );
+    this.logger.debug({ userId: user.id, convId, regenerate }, 'starting chat stream');
 
-    const history = historyResult.rows.slice(0, -1); // exclude current question
+    // Load the most recent turns before adding the new user message. The
+    // previous query used LIMIT with ascending order, which dropped recent
+    // history once a conversation grew beyond the limit.
+    const history = await this.loadHistory(convId, 20);
+    if (regenerate) {
+      const last = history[history.length - 1];
+      if (last?.role === 'user' && last.content === prompt) {
+        history.pop();
+      }
+    } else {
+      await this.pool.query(
+        `INSERT INTO app.messages (conversation_id, role, content)
+         VALUES ($1, 'user', $2)`,
+        [convId, prompt],
+      );
+    }
+
+    if (!createdNew) {
+      // A manually created empty thread gets a useful title on its first turn.
+      await this.pool.query(
+        `UPDATE app.conversations
+         SET title = $2, updated_at = now()
+         WHERE id = $1 AND (title = 'New conversation' OR title = '')`,
+        [convId, prompt.slice(0, 60)],
+      );
+    }
+
+    // Tell the browser which conversation exists before generation starts so a
+    // stop, reload, or regenerate can address the same thread.
+    onEvent('conversation', { conversation_id: convId });
 
     const aiResponse = await this.ai.chatStream(
       {
         conversation_id: convId,
-        question: question.trim(),
+        question: prompt,
         access_context: {
           user_id: user.id,
           role: user.role,
@@ -250,99 +325,228 @@ export class ChatService {
     }
 
     let accumulatedContent = '';
-    let detectedRoute: string | null = null;
+    let detectedRoute = 'documents';
     let citations: MessageCitation[] = [];
-    let traceId: string | null = null;
-    let latencyMs: number | null = null;
-    let promptTokens: number | null = null;
-    let completionTokens: number | null = null;
+    let upstreamDone: Record<string, unknown> = {};
+    let streamError: { code: string; message: string } | null = null;
+    let readError: unknown = null;
+    let aborted = signal?.aborted === true;
+    let receivedDone = false;
+
+    const parser = createSseParser((event, data) => {
+      const payload = asRecord(data);
+
+      if (event === 'route') {
+        const route = asString(payload.route);
+        if (route) detectedRoute = route;
+      } else if (event === 'token') {
+        const text = asString(payload.text);
+        if (text) accumulatedContent += text;
+      } else if (event === 'sources') {
+        if (Array.isArray(payload.citations)) {
+          citations = payload.citations as MessageCitation[];
+        }
+      } else if (event === 'done') {
+        // The gateway emits its own done event after persistence. Suppressing
+        // the upstream done avoids duplicate assistant messages in the client.
+        receivedDone = true;
+        upstreamDone = payload;
+        return;
+      } else if (event === 'error') {
+        streamError = {
+          code: asString(payload.code) ?? 'stream_error',
+          message: asString(payload.message) ?? 'The answer stream failed.',
+        };
+      }
+
+      if (!signal?.aborted) {
+        onEvent(event, data);
+      }
+    });
 
     const reader = aiResponse.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        let currentEvent = 'message';
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEvent = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            const rawData = line.slice(6).trim();
-            try {
-              const data = JSON.parse(rawData);
-              if (currentEvent === 'route' && data.route) {
-                detectedRoute = String(data.route);
-              } else if (currentEvent === 'token' && typeof data.text === 'string') {
-                accumulatedContent += data.text;
-              } else if (currentEvent === 'sources' && Array.isArray(data.citations)) {
-                citations = data.citations;
-              } else if (currentEvent === 'done') {
-                traceId = data.trace_id ? String(data.trace_id) : null;
-                latencyMs = typeof data.latency_ms === 'number' ? data.latency_ms : null;
-                if (data.usage) {
-                  promptTokens = data.usage.prompt_tokens ?? null;
-                  completionTokens = data.usage.completion_tokens ?? null;
-                }
-              }
-              onEvent(currentEvent, data);
-            } catch {
-              // ignore parse errors for partial event data
-            }
-          }
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+      parser.feed(decoder.decode());
+      parser.end();
+    } catch (error) {
+      readError = error;
+    } finally {
+      if (aborted || signal?.aborted) {
+        aborted = true;
+        try {
+          await reader.cancel();
+        } catch {
+          // The body may already be closed after an abort.
         }
       }
-    } finally {
       reader.releaseLock();
     }
 
-    // Persist assistant message
-    const insertResult = await this.pool.query<{ id: string }>(
-      `INSERT INTO app.messages (
-         conversation_id, role, content, route, citations, trace_id,
-         latency_ms, prompt_tokens, completion_tokens
-       )
-       VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id`,
-      [
+    const failure =
+      streamError ??
+      (readError && !aborted
+        ? { code: 'stream_error', message: 'The answer stream was interrupted.' }
+        : null) ??
+      (!aborted && !receivedDone
+        ? { code: 'stream_error', message: 'The answer stream ended before completion.' }
+        : null);
+
+    if (aborted) {
+      this.logger.info({ userId: user.id, convId }, 'chat stream aborted');
+    } else if (failure) {
+      this.logger.warn({ userId: user.id, convId, err: readError }, 'chat stream failed');
+      if (!streamError) {
+        onEvent('error', failure);
+      }
+    }
+
+    const traceId = asString(upstreamDone.trace_id);
+    const latencyMs = asNumber(upstreamDone.latency_ms);
+    const usage = asRecord(upstreamDone.usage);
+    const promptTokens = asNumber(usage.prompt_tokens);
+    const completionTokens = asNumber(usage.completion_tokens);
+    const lowConfidence = upstreamDone.low_confidence === true;
+    const answerStatus: NonNullable<MessageMetadata['answer_status']> = aborted
+      ? 'aborted'
+      : failure
+        ? 'error'
+        : normalizeAnswerStatus(upstreamDone.answer_status);
+    const citedIndices = asNumberArray(upstreamDone.cited_indices);
+    const citationCount = asNumber(upstreamDone.citation_count) ?? citations.length;
+    const spans = asNumberRecord(upstreamDone.spans);
+    const retrieval = asNumberRecord(upstreamDone.retrieval);
+    const model = asString(upstreamDone.model);
+
+    const metadata: MessageMetadata = {
+      answer_status: answerStatus,
+      aborted,
+      low_confidence: lowConfidence,
+      cited_indices: citedIndices,
+      citation_count: citationCount,
+      ...(model ? { model } : {}),
+      ...(spans ? { spans } : {}),
+      ...(retrieval ? { retrieval } : {}),
+      ...(failure ? { error_code: failure.code } : {}),
+    };
+
+    // Partial answers are persisted on abort or failure so the conversation
+    // stays truthful after a reconnect. Failed turns with no content are not
+    // stored as assistant messages.
+    let messageId: string | null = null;
+    if (accumulatedContent.trim().length > 0) {
+      try {
+        const insertResult = await this.pool.query<{ id: string }>(
+          `INSERT INTO app.messages (
+             conversation_id, role, content, route, citations, trace_id,
+             latency_ms, prompt_tokens, completion_tokens, metadata
+           )
+           VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id`,
+          [
+            convId,
+            accumulatedContent,
+            detectedRoute,
+            JSON.stringify(citations),
+            traceId,
+            latencyMs,
+            promptTokens,
+            completionTokens,
+            JSON.stringify(metadata),
+          ],
+        );
+        messageId = insertResult.rows[0]?.id ?? null;
+      } catch (error) {
+        this.logger.error({ err: error, convId }, 'failed to persist assistant message');
+      }
+    }
+
+    try {
+      await this.pool.query(`UPDATE app.conversations SET updated_at = now() WHERE id = $1`, [
         convId,
-        accumulatedContent,
-        detectedRoute || 'documents',
-        JSON.stringify(citations),
-        traceId,
-        latencyMs,
-        promptTokens,
-        completionTokens,
-      ],
-    );
+      ]);
+    } catch (error) {
+      this.logger.warn({ err: error, convId }, 'failed to update conversation timestamp');
+    }
 
-    const messageId = insertResult.rows[0]?.id;
-
-    // Update conversation timestamp
-    await this.pool.query(
-      `UPDATE app.conversations SET updated_at = now() WHERE id = $1`,
-      [convId],
-    );
-
-    // Emit final enhanced done event with message_id and conversation_id
-    onEvent('done', {
-      message_id: messageId,
-      conversation_id: convId,
-      route: detectedRoute || 'documents',
-      trace_id: traceId,
-      latency_ms: latencyMs,
-      usage: {
-        prompt_tokens: promptTokens || 0,
-        completion_tokens: completionTokens || 0,
-      },
-    });
+    if (!aborted && !failure) {
+      onEvent('done', {
+        message_id: messageId,
+        conversation_id: convId,
+        route: detectedRoute,
+        trace_id: traceId,
+        latency_ms: latencyMs,
+        usage: {
+          prompt_tokens: promptTokens ?? 0,
+          completion_tokens: completionTokens ?? 0,
+        },
+        low_confidence: lowConfidence,
+        answer_status: answerStatus,
+        cited_indices: citedIndices,
+        citation_count: citationCount,
+        aborted: false,
+        persisted: messageId !== null,
+      });
+    }
   }
+
+  private async loadHistory(
+    conversationId: string,
+    limit: number,
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    const result = await this.pool.query<{ role: 'user' | 'assistant'; content: string }>(
+      `SELECT role, content
+       FROM (
+         SELECT id, role, content, created_at
+         FROM app.messages
+         WHERE conversation_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2
+       ) recent
+       ORDER BY created_at ASC, id ASC`,
+      [conversationId, Math.max(1, limit)],
+    );
+    return result.rows;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function normalizeAnswerStatus(value: unknown): NonNullable<MessageMetadata['answer_status']> {
+  const status = asString(value);
+  return status === 'refused' || status === 'uncited' || status === 'answered'
+    ? status
+    : 'answered';
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function asNumberArray(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
+    : [];
+}
+
+function asNumberRecord(value: unknown): Record<string, number> | null {
+  const record = asRecord(value);
+  const entries = Object.entries(record).filter(
+    (entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]),
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
 }

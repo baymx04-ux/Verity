@@ -99,7 +99,7 @@ export function createApp({
   app.use('/api/admin', createAdminRouter({ pool, documentService, config, logger }));
   app.use('/api/documents', createDocumentRouter({ documentService, config, logger }));
   app.use('/api/conversations', createConversationsRouter({ chatService, logger }));
-  app.use('/api/chat', createChatRouter({ chatService, logger }));
+  app.use('/api/chat', createChatRouter({ chatService, logger, config }));
   app.use('/api/messages', createMessagesRouter({ chatService, logger }));
 
   app.use((_req, res) => {

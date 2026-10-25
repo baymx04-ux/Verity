@@ -1,6 +1,6 @@
 # Verity — Implementation Plan
 
-**Status:** Approved for implementation. Phase 0 is locally verified (Docker startup deferred); Phase 1 is in verification. Application features begin with Phase 1 auth, RBAC, and the app shell.
+**Status:** Approved for implementation. Phases 0–3 are implemented and covered by the Node/Python test suites; Docker cold-start and a measured time-to-first-token run are deferred to Phase 7. Phase 4 (text-to-SQL) is next. Application features begin with Phase 1 auth, RBAC, and the app shell.
 **Sources:** `plan.md` (behavior, architecture, scope), `design.md` (visual system, UX), `verity_slate_design.md_specification.md` (supplementary design spec).
 **Precedence:** `plan.md` wins on behavior and architecture; `design.md` wins on visuals and UX. The supplementary spec is used only where it does not contradict either.
 
@@ -434,6 +434,14 @@ Each phase ends with: tests, lint, typecheck, Docker verification, docs update, 
 ---
 
 ### Phase 3 — RAG question answering
+
+**Status:** implemented. Hybrid retrieval, RRF, configurable reranking, query
+rewriting, access-filtered SQL, citation validation, the confidence gate/refusal,
+signed AI streaming, gateway SSE relay with heartbeat/abort/regenerate persistence,
+and the chat UI are covered by unit tests. A database-backed leakage check, full
+Compose cold start, and p95 time-to-first-token measurement still require the
+running demo stack and are not claimed as verified. See
+[`retrieval.md`](./retrieval.md).
 
 **Goal:** grounded, streamed document answers with real citations.
 

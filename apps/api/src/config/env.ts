@@ -57,6 +57,7 @@ const envSchema = z.object({
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   COOKIE_DOMAIN: z.string().optional(),
   AUTH_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(10),
+  CHAT_RATE_LIMIT_PER_MIN: z.coerce.number().int().positive().default(20),
 });
 
 export type AppConfig = z.infer<typeof envSchema> & {

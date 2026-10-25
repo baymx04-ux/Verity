@@ -1,4 +1,4 @@
-import { ArrowUp, BookOpen, Layers, Square } from 'lucide-react';
+import { ArrowUp, BookOpen, FileText, Square } from 'lucide-react';
 import { type KeyboardEvent, useRef } from 'react';
 
 import { Button } from '../../components/ui/button';
@@ -45,19 +45,19 @@ export function Composer({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Ask any question across documents or data warehouses…"
+          placeholder="Ask a question about your documents…"
           className="min-h-16 w-full resize-none border-0 bg-transparent px-4 py-3 text-body-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
         />
 
         <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100 bg-slate-50/60 rounded-b-xl">
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-xs">
-              <Layers className="size-3 text-sky-600" aria-hidden="true" />
-              Auto (Smart Route)
+              <FileText className="size-3 text-sky-600" aria-hidden="true" />
+              Documents
             </span>
             <span className="hidden items-center gap-1 text-[11px] text-slate-400 sm:inline-flex">
               <BookOpen className="size-3" aria-hidden="true" />
-              RAG Citations Active
+              Inline citations
             </span>
           </div>
 
@@ -82,7 +82,7 @@ export function Composer({
                 disabled={disabled || !question.trim()}
                 className="h-8 gap-1.5 px-3 text-xs"
               >
-                <span>Submit Query</span>
+                <span>Ask</span>
                 <ArrowUp className="size-3.5" aria-hidden="true" />
               </Button>
             )}
@@ -91,7 +91,15 @@ export function Composer({
       </div>
 
       <p className="mt-2 text-center text-xs text-ink-400">
-        Press <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Enter</kbd> to submit, <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">Shift + Enter</kbd> for newline. Answers cite verified excerpts.
+        Press{' '}
+        <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">
+          Enter
+        </kbd>{' '}
+        to send,{' '}
+        <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">
+          Shift + Enter
+        </kbd>{' '}
+        for a new line. Citations map to the retrieved document passages.
       </p>
     </div>
   );

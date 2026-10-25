@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from app.rag.types import RetrievedChunk
 
-REFUSAL_ANSWER = (
-    "I don't have enough information to answer that from the documents you can access."
-)
+REFUSAL_ANSWER = "I don't have enough information to answer that from the documents you can access."
+
+
+def is_refusal_answer(text: str) -> bool:
+    """Return True when the model declined to answer from the supplied context."""
+
+    return "i don't have enough information" in " ".join(text.lower().split())
+
 
 DOCUMENT_SYSTEM_PROMPT = """You are Verity, an enterprise document analyst.
 

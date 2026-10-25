@@ -12,8 +12,13 @@ from app.core.config import Settings
 from app.core.tracing import Trace
 from app.llm.base import LLMClient, LLMError
 from app.models.chat import ChatRequest
-from app.rag.citations import CitationStreamFilter, validate_citations
-from app.rag.prompts import DOCUMENT_SYSTEM_PROMPT, REFUSAL_ANSWER, build_context_prompt
+from app.rag.citations import CitationStreamFilter
+from app.rag.prompts import (
+    DOCUMENT_SYSTEM_PROMPT,
+    REFUSAL_ANSWER,
+    build_context_prompt,
+    is_refusal_answer,
+)
 from app.rag.retrieval import RetrievalService
 from app.rag.rewrite import QueryRewriter
 from app.rag.types import AccessContext
@@ -65,24 +70,44 @@ class ChatService:
                 result = await self._retrieval.retrieve(question, access)
         except Exception as exc:
             logger.exception("retrieval failed trace_id=%s: %s", trace.trace_id, exc)
-            yield "error", {
-                "code": "retrieval_failed",
-                "message": "I couldn't search the document index. Please try again.",
-            }
+            yield (
+                "error",
+                {
+                    "code": "retrieval_failed",
+                    "message": "I couldn't search the document index. Please try again.",
+                },
+            )
             return
 
         if result.low_confidence or not result.citations:
-            yield "status", {"stage": "writing", "message": "Writing answer…"}
+            yield (
+                "status",
+                {
+                    "stage": "writing",
+                    "message": "No sufficiently relevant evidence found…",
+                },
+            )
             yield "token", {"text": REFUSAL_ANSWER}
             yield "sources", {"citations": []}
-            yield "done", {
-                "route": "documents",
-                "trace_id": trace.trace_id,
-                "latency_ms": int((time.perf_counter() - started) * 1000),
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
-                "spans": trace.summary(),
-                "low_confidence": True,
-            }
+            yield (
+                "done",
+                {
+                    "route": "documents",
+                    "trace_id": trace.trace_id,
+                    "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+                    "spans": trace.summary(),
+                    "low_confidence": True,
+                    "answer_status": "refused",
+                    "cited_indices": [],
+                    "citation_count": 0,
+                    "model": getattr(self._llm, "name", "unknown"),
+                    "retrieval": {
+                        "best_score": round(result.best_score, 4),
+                        "candidates": len(result.chunks),
+                    },
+                },
+            )
             return
 
         yield "status", {"stage": "writing", "message": "Writing answer with citations…"}
@@ -126,43 +151,72 @@ class ChatService:
             raise
         except LLMError as exc:
             logger.warning("generation failed trace_id=%s: %s", trace.trace_id, exc)
-            yield "error", {
-                "code": "generation_failed",
-                "message": "The answer model is unavailable. Please try again.",
-            }
+            yield (
+                "error",
+                {
+                    "code": "generation_failed",
+                    "message": "The answer model is unavailable. Please try again.",
+                },
+            )
             return
         except Exception as exc:
             logger.exception("unexpected generation error trace_id=%s: %s", trace.trace_id, exc)
-            yield "error", {
-                "code": "generation_failed",
-                "message": "The answer could not be generated. Please try again.",
-            }
+            yield (
+                "error",
+                {
+                    "code": "generation_failed",
+                    "message": "The answer could not be generated. Please try again.",
+                },
+            )
             return
 
         answer = "".join(answer_parts)
-        _, cited_indices = validate_citations(answer, len(citations))
-        if not cited_indices:
+        cited_indices = sorted(citation_filter.cited)
+        refused = is_refusal_answer(answer)
+        low_confidence = refused or not cited_indices
+
+        if refused:
+            # The model declined after retrieval. Do not present retrieved
+            # passages as evidence for a refusal.
+            citation_payload = []
+            citations = []
+            cited_indices = []
+        elif not cited_indices:
             logger.warning(
                 "answer has no valid citations trace_id=%s citations=%s",
                 trace.trace_id,
                 len(citations),
             )
+
+        answer_status = "refused" if refused else ("answered" if cited_indices else "uncited")
         logger.info(
-            "chat complete trace_id=%s latency_ms=%s cited=%s",
+            "chat complete trace_id=%s latency_ms=%s status=%s cited=%s",
             trace.trace_id,
             int((time.perf_counter() - started) * 1000),
+            answer_status,
             cited_indices,
         )
 
         yield "sources", {"citations": citation_payload}
-        yield "done", {
-            "route": "documents",
-            "trace_id": trace.trace_id,
-            "latency_ms": int((time.perf_counter() - started) * 1000),
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
+        yield (
+            "done",
+            {
+                "route": "documents",
+                "trace_id": trace.trace_id,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                },
+                "spans": trace.summary(),
+                "low_confidence": low_confidence,
+                "answer_status": answer_status,
+                "cited_indices": cited_indices,
+                "citation_count": len(citations),
+                "model": getattr(self._llm, "name", "unknown"),
+                "retrieval": {
+                    "best_score": round(result.best_score, 4),
+                    "candidates": len(result.chunks),
+                },
             },
-            "spans": trace.summary(),
-            "low_confidence": False,
-        }
+        )
