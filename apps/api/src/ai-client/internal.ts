@@ -91,25 +91,27 @@ export class InternalAiClient {
       fetchInit.signal = signal;
     }
 
-    return fetch(`${this.baseUrl}/chat/stream`, fetchInit).catch((error) => {
-      this.logger.error({ err: error }, 'ai chat stream request failed');
-      throw new AiRequestError(502, 'The answer service is unavailable.');
-    }).then(async (response) => {
-      if (!response.ok) {
-        let detail = 'The answer service rejected the request.';
-        try {
-          const data = (await response.json()) as { detail?: string };
-          if (data.detail) {
-            detail = String(data.detail).slice(0, 400);
+    return fetch(`${this.baseUrl}/chat/stream`, fetchInit)
+      .catch((error) => {
+        this.logger.error({ err: error }, 'ai chat stream request failed');
+        throw new AiRequestError(502, 'The answer service is unavailable.');
+      })
+      .then(async (response) => {
+        if (!response.ok) {
+          let detail = 'The answer service rejected the request.';
+          try {
+            const data = (await response.json()) as { detail?: string };
+            if (data.detail) {
+              detail = String(data.detail).slice(0, 400);
+            }
+          } catch {
+            // keep generic
           }
-        } catch {
-          // keep generic
+          this.logger.warn({ status: response.status }, 'ai chat stream returned an error');
+          throw new AiRequestError(response.status, detail);
         }
-        this.logger.warn({ status: response.status }, 'ai chat stream returned an error');
-        throw new AiRequestError(response.status, detail);
-      }
-      return response;
-    });
+        return response;
+      });
   }
 
   async deleteDocument(documentId: string): Promise<void> {

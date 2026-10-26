@@ -27,7 +27,6 @@ export function createIngestionJobId(documentId: string, attempt: number): strin
   return `${documentId}-${attempt}-${Date.now()}`;
 }
 
-
 export function createRedisConnection(config: AppConfig): Redis {
   return new Redis(config.REDIS_URL, {
     maxRetriesPerRequest: null,

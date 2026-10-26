@@ -50,11 +50,17 @@ export class StorageService {
     await this.client.send(command);
   }
 
-  async getPresignedDownloadUrl(key: string, filename?: string, expiresInSeconds = 300): Promise<string> {
+  async getPresignedDownloadUrl(
+    key: string,
+    filename?: string,
+    expiresInSeconds = 300,
+  ): Promise<string> {
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
-      ResponseContentDisposition: filename ? `attachment; filename="${encodeURIComponent(filename)}"` : undefined,
+      ResponseContentDisposition: filename
+        ? `attachment; filename="${encodeURIComponent(filename)}"`
+        : undefined,
     });
     return getSignedUrl(this.publicClient, command, { expiresIn: expiresInSeconds });
   }

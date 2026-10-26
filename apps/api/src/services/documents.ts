@@ -116,13 +116,18 @@ export class DocumentService {
       [id],
     );
 
-    await this.enqueue(doc.id, {
-      title: doc.title,
-      filename: doc.filename,
-      mimeType: doc.mime_type,
-      sizeBytes: doc.size_bytes,
-      accessLevel: doc.access_level,
-    }, doc.storage_key, true);
+    await this.enqueue(
+      doc.id,
+      {
+        title: doc.title,
+        filename: doc.filename,
+        mimeType: doc.mime_type,
+        sizeBytes: doc.size_bytes,
+        accessLevel: doc.access_level,
+      },
+      doc.storage_key,
+      true,
+    );
 
     const updated = await this.pool.query<DocumentRow>(
       `SELECT * FROM app.documents WHERE id = $1`,
@@ -133,7 +138,13 @@ export class DocumentService {
 
   private async enqueue(
     documentId: string,
-    meta: { title: string; filename: string; mimeType: string | null; sizeBytes: number; accessLevel: string },
+    meta: {
+      title: string;
+      filename: string;
+      mimeType: string | null;
+      sizeBytes: number;
+      accessLevel: string;
+    },
     storageKey: string,
     isRetry = false,
   ): Promise<void> {

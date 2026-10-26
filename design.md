@@ -1,15 +1,18 @@
 web application/stitch/projects/2964773870553650410/screens/96777e984fbc4f36a7cd3df96970deaa
+
 # Design System & UI/UX Architecture Specification: Verity Slate
+
 **Document Name:** `design.md`  
 **System:** Enterprise Knowledge Base with Hybrid Text-to-SQL & Document Retrieval (Clean & Accessible Edition)  
 **Target Environment:** Desktop Web (1440px+ optimized, 1280px minimum responsive break)  
-**Tech Stack:** React 19, TypeScript, Next.js App Router, Tailwind CSS v3.4+, shadcn/ui, Lucide Icons  
+**Tech Stack:** React 19, TypeScript, Next.js App Router, Tailwind CSS v3.4+, shadcn/ui, Lucide Icons
 
 ---
 
 ## 1. Design Philosophy & Visual Principles
 
 ### 1.1 Aesthetic Tone & Clarity
+
 - **Clean, Calm & Human-Centric:** Deprecates dense terminal aesthetic, claustrophobic IDE panes, and complex raw telemetry in favor of an airy, accessible executive workspace.
 - **Cognitive Ease:** High signal-to-noise ratio. Complex technical artifacts (e.g. abstract syntax trees, raw SSE logs, SQL execution plans) are gracefully tucked into progressive disclosure components (accordions, drawers, clean modals).
 - **Subtle Elevation & Whitespace:** Generous 16px–24px internal card paddings, soft neutral background tinting (`#FAF8FF` / `#F8FAFC`), rounded corners (`rounded-lg` 8px to `rounded-xl` 12px), and featherweight border strokes (`border-slate-200/80`).
@@ -23,34 +26,34 @@ web application/stitch/projects/2964773870553650410/screens/96777e984fbc4f36a7cd
 ```css
 :root {
   /* Surface Hierarchy (Light Mode / Airy Workspace) */
-  --background: #FAF8FF;              /* Soft ambient canvas */
-  --surface: #FFFFFF;                 /* Primary card & workspace surface */
-  --surface-subtle: #F8FAFC;          /* Inset blocks, table headers, dropzones */
-  --surface-muted: #F1F5F9;           /* Secondary badges, hover states */
-  --surface-accent: #E0F2FE;          /* Sky 100 - active nav items & pill highlights */
-  
+  --background: #faf8ff; /* Soft ambient canvas */
+  --surface: #ffffff; /* Primary card & workspace surface */
+  --surface-subtle: #f8fafc; /* Inset blocks, table headers, dropzones */
+  --surface-muted: #f1f5f9; /* Secondary badges, hover states */
+  --surface-accent: #e0f2fe; /* Sky 100 - active nav items & pill highlights */
+
   /* Borders & Dividers */
-  --border-subtle: #E2E8F0;          /* Default structural 1px divider (slate-200) */
-  --border-light: #F1F5F9;           /* Internal card dividers (slate-100) */
-  --border-focus: #0284C7;           /* Active primary focus ring */
+  --border-subtle: #e2e8f0; /* Default structural 1px divider (slate-200) */
+  --border-light: #f1f5f9; /* Internal card dividers (slate-100) */
+  --border-focus: #0284c7; /* Active primary focus ring */
 
   /* Typography */
-  --text-primary: #0F172A;           /* Slate 900 - Headings & primary numbers */
-  --text-secondary: #334155;         /* Slate 700 - Body copy & answer narrative */
-  --text-muted: #64748B;             /* Slate 500 - Meta labels, timestamps */
-  --text-tertiary: #94A3B8;          /* Slate 400 - Placeholders, disabled states */
+  --text-primary: #0f172a; /* Slate 900 - Headings & primary numbers */
+  --text-secondary: #334155; /* Slate 700 - Body copy & answer narrative */
+  --text-muted: #64748b; /* Slate 500 - Meta labels, timestamps */
+  --text-tertiary: #94a3b8; /* Slate 400 - Placeholders, disabled states */
 
   /* Primary Brand & Accents */
-  --brand-primary: #0284C7;          /* Sky 600 - Main interactive CTA & brand */
-  --brand-hover: #0369A1;            /* Sky 700 - Hover button states */
-  --brand-tint: #F0F9FF;             /* Sky 50 - Card highlights & search tags */
+  --brand-primary: #0284c7; /* Sky 600 - Main interactive CTA & brand */
+  --brand-hover: #0369a1; /* Sky 700 - Hover button states */
+  --brand-tint: #f0f9ff; /* Sky 50 - Card highlights & search tags */
 
   /* Verification & Route Semantics */
-  --status-verified: #10B981;        /* Emerald 500 - Validated matches & live badges */
-  --status-verified-bg: #ECFDF5;     /* Emerald 50 - Soft badge background */
-  --status-warning: #F59E0B;         /* Amber 500 - Pending or warning states */
-  --status-restricted: #EF4444;       /* Rose 500 - High security access level */
-  --status-restricted-bg: #FEF2F2;   /* Rose 50 - Restricted badge background */
+  --status-verified: #10b981; /* Emerald 500 - Validated matches & live badges */
+  --status-verified-bg: #ecfdf5; /* Emerald 50 - Soft badge background */
+  --status-warning: #f59e0b; /* Amber 500 - Pending or warning states */
+  --status-restricted: #ef4444; /* Rose 500 - High security access level */
+  --status-restricted-bg: #fef2f2; /* Rose 50 - Restricted badge background */
 }
 ```
 
@@ -71,7 +74,9 @@ web application/stitch/projects/2964773870553650410/screens/96777e984fbc4f36a7cd
 ## 3. Screen Architecture & Core Layouts
 
 ### 3.1 Global Navigation Shell (Top Bar + Footer)
+
 A clean, uncluttered persistent frame without overwhelming vertical multi-layer toolbars:
+
 - **Top Navigation Bar:**
   - Left: Clean brand mark (`Verity` with minimal teal/sky dot).
   - Center: Segmented top navigation tabs (`Ask & Analytics`, `Knowledge Base`, `Data Schemas`, `Audit Trail`) with subtle active pill state (`bg-sky-100 text-sky-800`).
@@ -139,11 +144,13 @@ A clean, uncluttered persistent frame without overwhelming vertical multi-layer 
 ## 4. UI Components & Interaction Specifications
 
 ### 4.1 Citation Chips & Context Highlighting
+
 - **Inline Citation Chip:**
   - Token Style: `bg-sky-50 text-sky-700 border border-sky-200/80 rounded px-2 py-0.5 text-xs font-medium inline-flex items-center gap-1.5 hover:bg-sky-100 hover:text-sky-800 transition-colors`
   - Click behavior: Shifts focus to the Context Drawer, scrolling to and illuminating the referenced excerpt with a soft sky accent ring.
 
 ### 4.2 Progressive Disclosure: SQL & Technical Details
+
 - Technical SQL statements are withheld from the default reading flow to keep the screen digestible for non-technical leadership.
 - Toggled via `<details>` / `<Accordion>`:
   - Header: `View Generated SQL & Execution Plan` with chevron indicator.
@@ -154,6 +161,7 @@ A clean, uncluttered persistent frame without overwhelming vertical multi-layer 
 ## 5. Tailwind CSS & shadcn/ui Implementation Strategy
 
 ### 5.1 shadcn/ui Primitives
+
 - `Card`, `CardHeader`, `CardTitle`, `CardContent`: Baseline structural containers with `bg-white border-slate-200/80 shadow-xs`.
 - `Badge`: Extended variants:
   - `variant="live"`: `bg-emerald-50 text-emerald-700 border-emerald-200/60 font-medium`
@@ -168,6 +176,7 @@ A clean, uncluttered persistent frame without overwhelming vertical multi-layer 
 ### 5.2 Signature Tailwind Utility Class Recipes
 
 #### Clean Cohort Metrics Table
+
 ```tsx
 <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
   <table className="w-full text-left text-sm">
@@ -195,6 +204,7 @@ A clean, uncluttered persistent frame without overwhelming vertical multi-layer 
 ```
 
 #### Clean Source Verification Excerpt Card
+
 ```tsx
 <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3 shadow-xs">
   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -208,7 +218,8 @@ A clean, uncluttered persistent frame without overwhelming vertical multi-layer 
     </span>
   </div>
   <div className="p-3 bg-slate-50 rounded-md border border-slate-200/60 text-xs text-slate-600 leading-relaxed italic">
-    “For the quarterly period ended September 30, 2024, our Tier-3 Enterprise segment delivered $4.21M in recognized gross cloud revenues...”
+    “For the quarterly period ended September 30, 2024, our Tier-3 Enterprise segment delivered
+    $4.21M in recognized gross cloud revenues...”
   </div>
 </div>
 ```

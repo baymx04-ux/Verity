@@ -4,9 +4,7 @@ import type { InternalAiClient } from '../ai-client/internal';
  * Minimal stand-in for the internal AI client in unit tests. Individual tests
  * override the methods they exercise.
  */
-export function createAiClientStub(
-  overrides: Partial<InternalAiClient> = {},
-): InternalAiClient {
+export function createAiClientStub(overrides: Partial<InternalAiClient> = {}): InternalAiClient {
   const stub = {
     ingest: async () => ({
       document_id: '00000000-0000-0000-0000-000000000000',

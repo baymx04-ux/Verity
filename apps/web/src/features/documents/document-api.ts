@@ -36,10 +36,7 @@ export function listDocuments(filters: DocumentFilters = {}): Promise<DocumentLi
   return apiFetch<DocumentListResponse>(`/api/documents?${documentQuery(filters)}`);
 }
 
-function uploadOnce(
-  input: UploadInput,
-  token: string | null,
-): Promise<{ document: DocumentItem }> {
+function uploadOnce(input: UploadInput, token: string | null): Promise<{ document: DocumentItem }> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', '/api/documents');
@@ -68,9 +65,7 @@ function uploadOnce(
         return;
       }
 
-      const errorBody = body as
-        | { error?: { code?: string; message?: string } }
-        | undefined;
+      const errorBody = body as { error?: { code?: string; message?: string } } | undefined;
       reject(
         new ApiError(
           request.status,

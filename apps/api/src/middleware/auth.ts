@@ -15,10 +15,9 @@ export async function resolveGroupIds(
   userId: string,
 ): Promise<string[]> {
   try {
-    const result = await pool.query(
-      `SELECT group_id FROM app.user_groups WHERE user_id = $1`,
-      [userId],
-    );
+    const result = await pool.query(`SELECT group_id FROM app.user_groups WHERE user_id = $1`, [
+      userId,
+    ]);
     return result.rows.map((row) => row.group_id);
   } catch {
     return [];

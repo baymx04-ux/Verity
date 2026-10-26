@@ -1,11 +1,4 @@
-import {
-  AlertTriangle,
-  Download,
-  FileText,
-  RefreshCw,
-  ShieldCheck,
-  Trash2,
-} from 'lucide-react';
+import { AlertTriangle, Download, FileText, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 
 import { Alert } from '../../components/ui/alert';
@@ -15,11 +8,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select } from '../../components/ui/select';
 import { Sheet } from '../../components/ui/sheet';
-import type {
-  AccessLevel,
-  DocumentItem,
-  GroupOption,
-} from '../../types/documents';
+import type { AccessLevel, DocumentItem, GroupOption } from '../../types/documents';
 import {
   ACCESS_LEVEL_LABELS,
   INGESTION_ERROR_LABELS,

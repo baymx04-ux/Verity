@@ -26,7 +26,10 @@ function start(): void {
   try {
     ingestionQueue = createIngestionQueue(config, logger);
   } catch (error) {
-    logger.error({ err: error }, 'ingestion queue unavailable; uploads will fail until Redis is up');
+    logger.error(
+      { err: error },
+      'ingestion queue unavailable; uploads will fail until Redis is up',
+    );
   }
 
   const app = createApp({ config, logger, health, pool, ai, ingestionQueue });

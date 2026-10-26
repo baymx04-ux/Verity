@@ -15,7 +15,10 @@ const createConversationSchema = z.object({
   title: z.string().trim().max(100).optional(),
 });
 
-export function createConversationsRouter({ chatService, logger }: ConversationsRouterOptions): Router {
+export function createConversationsRouter({
+  chatService,
+  logger,
+}: ConversationsRouterOptions): Router {
   const router = Router();
 
   router.use(requireAuth);

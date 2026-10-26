@@ -63,25 +63,19 @@
     "file": "q3-revenue-report.md",
     "title": "Q3 FY2026 Revenue Report",
     "access": "restricted",
-    "groups": [
-      "finance"
-    ]
+    "groups": ["finance"]
   },
   {
     "file": "q2-revenue-report.md",
     "title": "Q2 FY2026 Revenue Report",
     "access": "restricted",
-    "groups": [
-      "finance"
-    ]
+    "groups": ["finance"]
   },
   {
     "file": "product-roadmap.md",
     "title": "Product Roadmap",
     "access": "restricted",
-    "groups": [
-      "engineering"
-    ]
+    "groups": ["engineering"]
   },
   {
     "file": "api-architecture.md",
@@ -111,17 +105,13 @@
     "file": "workforce-plan.md",
     "title": "Workforce Plan FY2027",
     "access": "restricted",
-    "groups": [
-      "people"
-    ]
+    "groups": ["people"]
   },
   {
     "file": "approved-vendors.md",
     "title": "Approved Vendors",
     "access": "restricted",
-    "groups": [
-      "finance"
-    ]
+    "groups": ["finance"]
   },
   {
     "file": "pricing-guide.md",

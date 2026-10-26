@@ -1,14 +1,7 @@
 import { type HTMLAttributes } from 'react';
 
 type BadgeVariant =
-  | 'neutral'
-  | 'verified'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'live'
-  | 'analyst'
-  | 'restricted';
+  'neutral' | 'verified' | 'warning' | 'danger' | 'info' | 'live' | 'analyst' | 'restricted';
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;

@@ -4,11 +4,7 @@ import type { AppConfig } from '../config/env';
 import type { Logger } from '../config/logger';
 import type { InternalAiClient } from '../ai-client/internal';
 import { StorageService } from './storage';
-import {
-  IngestionService,
-  type IngestionStore,
-  type IngestionTarget,
-} from './ingestion';
+import { IngestionService, type IngestionStore, type IngestionTarget } from './ingestion';
 
 /** Postgres-backed status transitions for the ingestion worker. */
 export class PostgresIngestionStore implements IngestionStore {
