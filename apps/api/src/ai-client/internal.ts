@@ -118,8 +118,23 @@ export class InternalAiClient {
     await this.request('DELETE', `/documents/${documentId}`, undefined, 30_000);
   }
 
+  async getSchemaCatalog(): Promise<unknown> {
+    return this.request<unknown>('GET', '/schema/catalog', undefined, 30_000);
+  }
+
+  async refreshSchemaCatalog(): Promise<unknown> {
+    return this.request<unknown>('POST', '/schema/refresh', undefined, 120_000);
+  }
+
+  async patchSchemaCatalog(
+    viewName: string,
+    body: { description?: string; columns?: unknown[] },
+  ): Promise<unknown> {
+    return this.request<unknown>('PATCH', `/schema/catalog/${viewName}`, body, 30_000);
+  }
+
   private async request<T>(
-    method: 'POST' | 'DELETE',
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown,
     timeoutMs = 60_000,

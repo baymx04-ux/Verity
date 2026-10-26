@@ -1,4 +1,10 @@
-"""Internal signed SSE endpoint for grounded chat."""
+"""Internal signed SSE endpoint for grounded chat.
+
+Dispatches to either the RAG ChatService (route='documents', default) or
+the SQL SqlChatService (route='sql') based on the optional `route` field in
+the request body. Phase 5 will add an automatic router classifier; for Phase 4
+the gateway can explicitly set route='sql' for data questions.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from app.core.security import require_internal_signature
 from app.models.chat import ChatRequest
 from app.rag.service import ChatService
+from app.sql.service import SqlChatService
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +34,18 @@ def format_sse(event: str, data: dict[str, Any]) -> str:
 
 @router.post("/chat/stream")
 async def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
-    service: ChatService = request.app.state.chat_service
+    route = getattr(payload, "route", None) or "documents"
+
+    if route == "sql":
+        sql_service: SqlChatService = request.app.state.sql_chat_service
+        stream_iter = sql_service.stream(payload)
+    else:
+        rag_service: ChatService = request.app.state.chat_service
+        stream_iter = rag_service.stream(payload)
 
     async def events() -> AsyncIterator[str]:
         try:
-            async for event, data in service.stream(payload):
+            async for event, data in stream_iter:
                 yield format_sse(event, data)
         except asyncio.CancelledError:
             raise

@@ -16,6 +16,7 @@ import { createAdminRouter } from './routes/admin';
 import { createConversationsRouter } from './routes/conversations';
 import { createChatRouter } from './routes/chat';
 import { createMessagesRouter } from './routes/messages';
+import { createSchemaCatalogRouter } from './routes/schema-catalog';
 import { StorageService } from './services/storage';
 import { DocumentService } from './services/documents';
 import { ChatService } from './services/chat';
@@ -97,6 +98,10 @@ export function createApp({
 
   app.use('/api/auth', createAuthRouter({ config, logger, pool }));
   app.use('/api/admin', createAdminRouter({ pool, documentService, config, logger }));
+  app.use(
+    '/api/admin/schema-catalog',
+    createSchemaCatalogRouter({ ai, config, logger }),
+  );
   app.use('/api/documents', createDocumentRouter({ documentService, config, logger }));
   app.use('/api/conversations', createConversationsRouter({ chatService, logger }));
   app.use('/api/chat', createChatRouter({ chatService, logger, config }));

@@ -1,0 +1,141 @@
+# few_shots.yaml
+# Phase 4 — vetted few-shot examples for SQL generation.
+#
+# Each entry has:
+#   question: natural-language question
+#   sql: the correct, safe SQL (using only business_ro.v_* views)
+#
+# The AI service embeds the questions at startup and retrieves the top-k
+# most similar examples to include in the generation prompt.
+# Add new entries here and restart the AI service to update the cache.
+
+examples:
+  - question: "What are the top 10 best-selling products by total revenue?"
+    sql: |
+      SELECT p.name, p.category,
+             SUM(oi.line_total) AS total_revenue,
+             SUM(oi.qty)        AS units_sold
+      FROM   business_ro.v_order_items oi
+      JOIN   business_ro.v_orders      o  ON o.id = oi.order_id
+      JOIN   business_ro.v_products    p  ON p.id = oi.product_id
+      WHERE  o.status = 'delivered'
+      GROUP  BY p.id, p.name, p.category
+      ORDER  BY total_revenue DESC
+      LIMIT  10
+
+  - question: "How many orders were placed each month in 2024?"
+    sql: |
+      SELECT DATE_TRUNC('month', ordered_at)::date AS month,
+             COUNT(*) AS order_count
+      FROM   business_ro.v_orders
+      WHERE  ordered_at >= '2024-01-01'
+        AND  ordered_at <  '2025-01-01'
+      GROUP  BY 1
+      ORDER  BY 1
+      LIMIT  200
+
+  - question: "What is the average order value by customer segment?"
+    sql: |
+      SELECT c.segment,
+             COUNT(DISTINCT o.id)        AS order_count,
+             ROUND(AVG(o.total), 2)      AS avg_order_value,
+             ROUND(SUM(o.total), 2)      AS total_revenue
+      FROM   business_ro.v_orders    o
+      JOIN   business_ro.v_customers c ON c.id = o.customer_id
+      WHERE  o.status NOT IN ('cancelled', 'returned')
+      GROUP  BY c.segment
+      ORDER  BY avg_order_value DESC
+      LIMIT  200
+
+  - question: "Which product categories have the highest return rate?"
+    sql: |
+      WITH delivered AS (
+        SELECT oi.product_id,
+               SUM(oi.qty) AS delivered_qty
+        FROM   business_ro.v_order_items oi
+        JOIN   business_ro.v_orders      o ON o.id = oi.order_id
+        WHERE  o.status = 'delivered'
+        GROUP  BY oi.product_id
+      ),
+      returned AS (
+        SELECT r.product_id,
+               SUM(r.qty) AS returned_qty
+        FROM   business_ro.v_returns r
+        GROUP  BY r.product_id
+      )
+      SELECT p.category,
+             SUM(d.delivered_qty)                           AS delivered_qty,
+             COALESCE(SUM(r.returned_qty), 0)               AS returned_qty,
+             ROUND(
+               100.0 * COALESCE(SUM(r.returned_qty), 0)
+               / NULLIF(SUM(d.delivered_qty), 0), 2
+             ) AS return_rate_pct
+      FROM   delivered d
+      JOIN   business_ro.v_products p ON p.id = d.product_id
+      LEFT   JOIN returned r ON r.product_id = d.product_id
+      GROUP  BY p.category
+      ORDER  BY return_rate_pct DESC
+      LIMIT  200
+
+  - question: "What is the monthly support ticket volume and average resolution time?"
+    sql: |
+      SELECT DATE_TRUNC('month', created_at)::date   AS month,
+             COUNT(*)                                 AS ticket_count,
+             ROUND(AVG(resolution_hours), 1)          AS avg_resolution_hours,
+             COUNT(*) FILTER (WHERE status = 'closed') AS closed_count
+      FROM   business_ro.v_support_tickets
+      GROUP  BY 1
+      ORDER  BY 1
+      LIMIT  200
+
+  - question: "How many employees are in each department?"
+    sql: |
+      SELECT department,
+             COUNT(*) FILTER (WHERE is_active)     AS active_employees,
+             COUNT(*) FILTER (WHERE NOT is_active)  AS inactive_employees,
+             COUNT(*)                               AS total_employees
+      FROM   business_ro.v_employees
+      GROUP  BY department
+      ORDER  BY active_employees DESC
+      LIMIT  200
+
+  - question: "What is the revenue by sales channel?"
+    sql: |
+      SELECT channel,
+             COUNT(*)              AS order_count,
+             ROUND(SUM(total), 2)  AS total_revenue
+      FROM   business_ro.v_orders
+      WHERE  status NOT IN ('cancelled')
+      GROUP  BY channel
+      ORDER  BY total_revenue DESC
+      LIMIT  200
+
+  - question: "Show me orders that were cancelled in Q1 2024"
+    sql: |
+      SELECT id, customer_id, total, ordered_at
+      FROM   business_ro.v_orders
+      WHERE  status = 'cancelled'
+        AND  ordered_at >= '2024-01-01'
+        AND  ordered_at <  '2024-04-01'
+      ORDER  BY ordered_at DESC
+      LIMIT  200
+
+  - question: "What are the most common reasons for product returns?"
+    sql: |
+      SELECT reason,
+             COUNT(*)       AS return_count,
+             SUM(qty)       AS items_returned,
+             ROUND(SUM(refund_amt), 2) AS total_refunded
+      FROM   business_ro.v_returns
+      GROUP  BY reason
+      ORDER  BY return_count DESC
+      LIMIT  200
+
+  - question: "Which products are low on stock?"
+    sql: |
+      SELECT sku, name, category, stock_qty
+      FROM   business_ro.v_products
+      WHERE  is_active = TRUE
+        AND  stock_qty < 20
+      ORDER  BY stock_qty ASC
+      LIMIT  200

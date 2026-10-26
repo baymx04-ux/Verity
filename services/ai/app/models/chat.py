@@ -28,6 +28,9 @@ class ChatRequest(BaseModel):
     access_context: ChatAccessContext
     history: list[ChatHistoryMessage] = Field(default_factory=list, max_length=40)
     trace_id: str | None = Field(default=None, max_length=128)
+    # Phase 5 will populate this from the router classifier. For Phase 4 the
+    # gateway can set it explicitly: "sql" | "documents" (default: "documents")
+    route: str | None = Field(default=None, max_length=32)
 
 
 class CitationResponse(BaseModel):

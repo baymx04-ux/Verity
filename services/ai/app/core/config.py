@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     verity_app_user: str = "verity_app"
     verity_app_password: SecretStr
 
+    sql_ro_user: str = "verity_sql_ro"
+    sql_ro_password: SecretStr = SecretStr("")
+
     redis_url: str = "redis://localhost:6379"
 
     minio_endpoint: str = "localhost"
@@ -64,6 +67,10 @@ class Settings(BaseSettings):
     chunk_tokens: int = 650
     chunk_overlap: int = 100
     ingest_max_mb: int = 25
+
+    sql_display_limit: int = 200
+    sql_hard_limit: int = 1000
+    sql_max_repairs: int = 2
 
     @property
     def database_url(self) -> str:

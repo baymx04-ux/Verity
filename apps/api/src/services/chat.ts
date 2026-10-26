@@ -24,7 +24,7 @@ export interface MessageCitation {
 }
 
 export interface MessageMetadata {
-  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error';
+  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification';
   aborted?: boolean;
   low_confidence?: boolean;
   model?: string;
@@ -34,6 +34,7 @@ export interface MessageMetadata {
   invalid_citation_count?: number;
   time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
+  sql_outcome?: Record<string, unknown>;
   error_code?: string;
   [key: string]: unknown;
 }
@@ -334,6 +335,9 @@ export class ChatService {
     let readError: unknown = null;
     let aborted = signal?.aborted === true;
     let receivedDone = false;
+    // SQL event payload — persisted on the assistant message
+    let sqlQuery: string | null = null;
+    let sqlResultPreview: unknown = null;
 
     const parser = createSseParser((event, data) => {
       const payload = asRecord(data);
@@ -341,6 +345,20 @@ export class ChatService {
       if (event === 'route') {
         const route = asString(payload.route);
         if (route) detectedRoute = route;
+      } else if (event === 'sql') {
+        // Capture the SQL query and a preview of the result rows for persistence
+        sqlQuery = asString(payload.sql);
+        if (payload.rows !== undefined) {
+          // Store first 20 rows as the preview to avoid storing huge results
+          const rows = Array.isArray(payload.rows) ? payload.rows.slice(0, 20) : [];
+          sqlResultPreview = {
+            columns: payload.columns,
+            rows,
+            row_count: payload.row_count,
+            truncated: payload.truncated,
+            execution_ms: payload.execution_ms,
+          };
+        }
       } else if (event === 'token') {
         const text = asString(payload.text);
         if (text) accumulatedContent += text;
@@ -450,16 +468,19 @@ export class ChatService {
       try {
         const insertResult = await this.pool.query<{ id: string }>(
           `INSERT INTO app.messages (
-             conversation_id, role, content, route, citations, trace_id,
-             latency_ms, prompt_tokens, completion_tokens, metadata
+             conversation_id, role, content, route, citations, sql_query,
+             sql_result_preview, trace_id, latency_ms, prompt_tokens,
+             completion_tokens, metadata
            )
-           VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, $8, $9)
+           VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id`,
           [
             convId,
             accumulatedContent,
             detectedRoute,
             JSON.stringify(citations),
+            sqlQuery,
+            sqlResultPreview ? JSON.stringify(sqlResultPreview) : null,
             traceId,
             latencyMs,
             promptTokens,
@@ -536,7 +557,10 @@ function asString(value: unknown): string | null {
 
 function normalizeAnswerStatus(value: unknown): NonNullable<MessageMetadata['answer_status']> {
   const status = asString(value);
-  return status === 'refused' || status === 'uncited' || status === 'answered'
+  return status === 'refused' ||
+    status === 'uncited' ||
+    status === 'answered' ||
+    status === 'clarification'
     ? status
     : 'answered';
 }

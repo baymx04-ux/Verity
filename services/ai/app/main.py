@@ -12,6 +12,8 @@ from app.rag.rerank import build_reranker
 from app.rag.retrieval import PostgresRetrievalStore, RetrievalService
 from app.rag.service import ChatService
 from app.routers import chat, health, ingest
+from app.routers import schema as schema_router
+from app.sql.service import SqlChatService
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,16 +37,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.ingestion_service = build_ingestion_service(resolved)
 
     llm = build_llm_client(resolved)
+    embeddings = GoogleEmbeddingClient(resolved)
     retrieval = RetrievalService(
         resolved,
-        embeddings=GoogleEmbeddingClient(resolved),
+        embeddings=embeddings,
         store=PostgresRetrievalStore(resolved),
         reranker=build_reranker(resolved),
     )
     app.state.chat_service = ChatService(resolved, retrieval=retrieval, llm=llm)
+    app.state.sql_chat_service = SqlChatService(resolved, llm=llm, embeddings=embeddings)
+    # Expose embeddings client for the schema router
+    app.state.embeddings_client = embeddings
 
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(chat.router)
+    app.include_router(schema_router.router)
 
     return app
+
