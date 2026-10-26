@@ -438,10 +438,12 @@ Each phase ends with: tests, lint, typecheck, Docker verification, docs update, 
 **Status:** implemented. Hybrid retrieval, RRF, configurable reranking, query
 rewriting, access-filtered SQL, citation validation, the confidence gate/refusal,
 signed AI streaming, gateway SSE relay with heartbeat/abort/regenerate persistence,
-and the chat UI are covered by unit tests. A database-backed leakage check, full
-Compose cold start, and p95 time-to-first-token measurement still require the
-running demo stack and are not claimed as verified. See
-[`retrieval.md`](./retrieval.md).
+and the chat UI are covered by unit tests. An opt-in PostgreSQL integration test
+(`make test-integration`) verifies viewer/analyst/admin access filtering against a
+disposable database. The AI service records `time_to_first_token_ms` in every
+`done` payload and persists it through the gateway, but a full Compose cold start
+and a measured p95 time-to-first-token run are still deferred and not claimed as
+verified. See [`retrieval.md`](./retrieval.md).
 
 **Goal:** grounded, streamed document answers with real citations.
 

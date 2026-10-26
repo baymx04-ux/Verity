@@ -36,7 +36,7 @@ function sseResponse(text = 'Stub answer') {
       'event: route\ndata: {"route":"documents"}\n\n' +
       `event: token\ndata: {"text":"${text}"}\n\n` +
       'event: sources\ndata: {"citations":[]}\n\n' +
-      'event: done\ndata: {"trace_id":"trace-1","latency_ms":80,"low_confidence":false,"answer_status":"answered","cited_indices":[],"citation_count":0,"model":"fake","usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
+      'event: done\ndata: {"trace_id":"trace-1","latency_ms":80,"time_to_first_token_ms":1420,"low_confidence":false,"answer_status":"answered","cited_indices":[],"citation_count":0,"invalid_citation_count":1,"model":"fake","usage":{"prompt_tokens":10,"completion_tokens":5}}\n\n',
     { headers: { 'Content-Type': 'text/event-stream' } },
   );
 }
@@ -76,6 +76,15 @@ describe('ChatService streaming', () => {
     expect(done['message_id']).toBe(assistantId);
     expect(done['conversation_id']).toBe(conversationId);
     expect(done['trace_id']).toBe('trace-1');
+    expect(done['time_to_first_token_ms']).toBe(1420);
+    expect(done['invalid_citation_count']).toBe(1);
+
+    const insert = vi
+      .mocked(pool.query)
+      .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
+    const metadata = JSON.parse(String(insert?.[1]?.[8])) as Record<string, unknown>;
+    expect(metadata['time_to_first_token_ms']).toBe(1420);
+    expect(metadata['invalid_citation_count']).toBe(1);
   });
 
   it('persists a partial answer when the client aborts', async () => {

@@ -44,6 +44,7 @@ class ChatService:
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
+        first_token_ms: int | None = None
         trace = Trace(request.trace_id) if request.trace_id else Trace()
         access = AccessContext(
             user_id=str(request.access_context.user_id),
@@ -87,6 +88,7 @@ class ChatService:
                     "message": "No sufficiently relevant evidence found…",
                 },
             )
+            first_token_ms = int((time.perf_counter() - started) * 1000)
             yield "token", {"text": REFUSAL_ANSWER}
             yield "sources", {"citations": []}
             yield (
@@ -95,12 +97,14 @@ class ChatService:
                     "route": "documents",
                     "trace_id": trace.trace_id,
                     "latency_ms": int((time.perf_counter() - started) * 1000),
+                    "time_to_first_token_ms": first_token_ms,
                     "usage": {"prompt_tokens": 0, "completion_tokens": 0},
-                    "spans": trace.summary(),
+                    "spans": {**trace.summary(), **result.spans},
                     "low_confidence": True,
                     "answer_status": "refused",
                     "cited_indices": [],
                     "citation_count": 0,
+                    "invalid_citation_count": 0,
                     "model": getattr(self._llm, "name", "unknown"),
                     "retrieval": {
                         "best_score": round(result.best_score, 4),
@@ -139,11 +143,15 @@ class ChatService:
                         continue
                     safe = citation_filter.feed(delta.text)
                     if safe:
+                        if first_token_ms is None:
+                            first_token_ms = int((time.perf_counter() - started) * 1000)
                         answer_parts.append(safe)
                         yield "token", {"text": safe}
 
             tail = citation_filter.flush()
             if tail:
+                if first_token_ms is None:
+                    first_token_ms = int((time.perf_counter() - started) * 1000)
                 answer_parts.append(tail)
                 yield "token", {"text": tail}
         except asyncio.CancelledError:
@@ -188,11 +196,20 @@ class ChatService:
                 len(citations),
             )
 
+        if citation_filter.dropped_count:
+            logger.warning(
+                "dropped invalid citation markers trace_id=%s count=%s indices=%s",
+                trace.trace_id,
+                citation_filter.dropped_count,
+                sorted(citation_filter.dropped_indices),
+            )
+
         answer_status = "refused" if refused else ("answered" if cited_indices else "uncited")
         logger.info(
-            "chat complete trace_id=%s latency_ms=%s status=%s cited=%s",
+            "chat complete trace_id=%s latency_ms=%s ttft_ms=%s status=%s cited=%s",
             trace.trace_id,
             int((time.perf_counter() - started) * 1000),
+            first_token_ms,
             answer_status,
             cited_indices,
         )
@@ -204,15 +221,17 @@ class ChatService:
                 "route": "documents",
                 "trace_id": trace.trace_id,
                 "latency_ms": int((time.perf_counter() - started) * 1000),
+                "time_to_first_token_ms": first_token_ms,
                 "usage": {
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                 },
-                "spans": trace.summary(),
+                "spans": {**trace.summary(), **result.spans},
                 "low_confidence": low_confidence,
                 "answer_status": answer_status,
                 "cited_indices": cited_indices,
                 "citation_count": len(citations),
+                "invalid_citation_count": citation_filter.dropped_count,
                 "model": getattr(self._llm, "name", "unknown"),
                 "retrieval": {
                     "best_score": round(result.best_score, 4),

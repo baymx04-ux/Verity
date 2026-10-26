@@ -67,6 +67,8 @@ async def test_chat_service_refusal_when_low_confidence(settings: Settings) -> N
     done_events = [cast(dict[str, Any], e[1]) for e in events if e[0] == "done"]
     assert done_events[0]["low_confidence"] is True
     assert done_events[0]["answer_status"] == "refused"
+    assert isinstance(done_events[0]["time_to_first_token_ms"], int)
+    assert done_events[0]["invalid_citation_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -177,3 +179,56 @@ async def test_chat_service_streams_answer_with_citations(settings: Settings) ->
     assert done["cited_indices"] == [1]
     assert done["usage"]["prompt_tokens"] == 50
     assert done["usage"]["completion_tokens"] == 20
+    assert isinstance(done["time_to_first_token_ms"], int)
+    assert done["invalid_citation_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_service_reports_and_logs_dropped_citations(settings: Settings) -> None:
+    chunk = RetrievedChunk(
+        id="c1",
+        document_id="d1",
+        title="Employee Handbook",
+        content="Employees receive 25 days paid vacation annually.",
+        chunk_index=0,
+        score=0.9,
+    )
+    citation = Citation(
+        id="c1",
+        document_id="d1",
+        title="Employee Handbook",
+        page=None,
+        section=None,
+        snippet="Employees receive 25 days paid vacation annually.",
+        score=0.9,
+    )
+
+    class MockRetrieval:
+        async def retrieve(self, question: str, access: AccessContext) -> RetrievalResult:
+            return RetrievalResult(
+                chunks=[chunk],
+                citations=[citation],
+                low_confidence=False,
+                best_score=0.9,
+                spans={"retrieval_search": 2},
+            )
+
+    llm = FakeLLMClient(["Use [1] here and [9] there."])
+    service = ChatService(settings, retrieval=MockRetrieval(), llm=llm)  # type: ignore[arg-type]
+
+    request = ChatRequest(
+        conversation_id=uuid.uuid4(),
+        question="How much vacation?",
+        access_context=ChatAccessContext(user_id=uuid.uuid4(), role="analyst"),
+    )
+
+    events = [event async for event in service.stream(request)]
+    tokens = "".join(
+        str(cast(dict[str, Any], event[1])["text"]) for event in events if event[0] == "token"
+    )
+    assert tokens == "Use [1] here and  there."
+
+    done = cast(dict[str, Any], next(event[1] for event in events if event[0] == "done"))
+    assert done["cited_indices"] == [1]
+    assert done["invalid_citation_count"] == 1
+    assert done["spans"]["retrieval_search"] == 2

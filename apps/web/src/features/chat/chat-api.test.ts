@@ -27,7 +27,7 @@ describe('streamChat', () => {
           'event: conversation\ndata: {"conversation_id":"conv-1"}\n\nevent: tok',
           'en\ndata: {"text":"Hello "}\n\nevent: token\ndata: {"text":"world"}\n\n',
           'event: sources\ndata: {"citations":[{"id":"c1"}]}\n\n',
-          'event: done\ndata: {"message_id":"m1","conversation_id":"conv-1","usage":{"prompt_tokens":1,"completion_tokens":2}}\n\n',
+          'event: done\ndata: {"message_id":"m1","conversation_id":"conv-1","time_to_first_token_ms":1234,"invalid_citation_count":0,"usage":{"prompt_tokens":1,"completion_tokens":2}}\n\n',
         ]),
     );
     vi.stubGlobal('fetch', fetchMock);
@@ -48,7 +48,11 @@ describe('streamChat', () => {
     expect(onToken.mock.calls).toEqual([['Hello '], ['world']]);
     expect(onSources).toHaveBeenCalledOnce();
     expect(onDone).toHaveBeenCalledOnce();
-    expect(onDone.mock.calls[0]?.[0]).toMatchObject({ message_id: 'm1' });
+    expect(onDone.mock.calls[0]?.[0]).toMatchObject({
+      message_id: 'm1',
+      time_to_first_token_ms: 1234,
+      invalid_citation_count: 0,
+    });
     expect(onError).not.toHaveBeenCalled();
 
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;

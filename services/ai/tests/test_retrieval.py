@@ -113,3 +113,73 @@ async def test_retrieval_service_confidence_gate(settings: Settings) -> None:
     # Score should be below 0.5, so low_confidence should be True and citations empty
     assert result.low_confidence is True
     assert result.citations == []
+
+
+@pytest.mark.asyncio
+async def test_retrieval_service_caps_rerank_candidates(settings: Settings) -> None:
+    test_settings = settings.model_copy(
+        update={
+            "retrieve_top_k": 50,
+            "rerank_candidates": 2,
+            "rerank_top_n": 1,
+        }
+    )
+
+    class FakeEmbeddings:
+        async def embed_query(self, query: str) -> list[float]:
+            return [0.1] * 768
+
+    class FakeStore:
+        async def search(
+            self, **kwargs: object
+        ) -> tuple[list[RetrievedChunk], list[RetrievedChunk]]:
+            del kwargs
+            chunks = [
+                RetrievedChunk(
+                    id=f"c{index}",
+                    document_id="d1",
+                    title="Doc 1",
+                    content=f"vacation policy result {index}",
+                    chunk_index=index,
+                    keyword_score=1.0 - index * 0.1,
+                )
+                for index in range(5)
+            ]
+            return [], chunks
+
+    class RecordingReranker:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[int, int]] = []
+
+        async def rerank(
+            self,
+            query: str,
+            candidates: list[RetrievedChunk],
+            *,
+            top_n: int,
+        ) -> list[RetrievedChunk]:
+            del query
+            self.calls.append((len(candidates), top_n))
+            return candidates[:top_n]
+
+    reranker = RecordingReranker()
+    service = RetrievalService(
+        test_settings,
+        embeddings=FakeEmbeddings(),  # type: ignore[arg-type]
+        store=FakeStore(),
+        reranker=reranker,
+    )
+
+    access = AccessContext(user_id="u1", role="viewer", group_ids=())
+    result = await service.retrieve("What is the vacation policy?", access)
+
+    assert reranker.calls == [(2, 1)]
+    assert len(result.chunks) == 1
+    assert {
+        "retrieval_embedding",
+        "retrieval_search",
+        "retrieval_fusion",
+        "retrieval_rerank",
+    } <= set(result.spans)

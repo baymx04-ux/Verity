@@ -28,6 +28,8 @@ export interface MessageMetadata {
   spans?: Record<string, number>;
   cited_indices?: number[];
   citation_count?: number;
+  invalid_citation_count?: number;
+  time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
   error_code?: string;
   [key: string]: unknown;
@@ -69,6 +71,8 @@ export interface StreamDonePayload {
   answer_status?: MessageMetadata['answer_status'];
   cited_indices?: number[];
   citation_count?: number;
+  invalid_citation_count?: number;
+  time_to_first_token_ms?: number | null;
   aborted?: boolean;
   persisted?: boolean;
 }

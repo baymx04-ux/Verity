@@ -13,6 +13,7 @@ __pycache__/
 .mypy_cache/
 infra/postgres/data/
 infra/minio/data/
+backups/
 *.log
 .DS_Store
 .idea/

@@ -108,8 +108,9 @@ stay on the candidate so the reranker and trace metadata can distinguish them.
 
 ## 5. Reranking
 
-At most `max(RERANK_TOP_N × 4, RERANK_TOP_N)` fused candidates (24 with the
-default `RERANK_TOP_N = 6`) are passed to the configured reranker:
+At most `max(RERANK_TOP_N, RERANK_CANDIDATES)` fused candidates are passed to
+the configured reranker. `RERANK_CANDIDATES` defaults to `20`, which bounds
+reranker cost independently of how many results each retrieval arm returns:
 
 | `RERANKER`       | Behavior                                                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -121,7 +122,9 @@ default `RERANK_TOP_N = 6`) are passed to the configured reranker:
 `none` so the stack works without an extra provider; it is a ranking/confidence
 fallback, not a cross-encoder. Assistant metadata keeps the best score and
 candidate count, while citation objects carry per-chunk scores for later
-evaluation.
+evaluation. Retrieval also records `retrieval_embedding`, `retrieval_search`,
+`retrieval_fusion`, and `retrieval_rerank` millisecond spans alongside the chat
+trace spans.
 
 ## 6. Confidence gate
 
@@ -155,8 +158,10 @@ title, section, page, and chunk text. Generation runs at
 
 A streaming citation filter buffers only potential `[n]` markers. Valid markers
 are emitted unchanged and recorded; markers above the citation count are dropped
-before the browser sees them. This means the gateway persists exactly the text the
-user saw, with no hallucinated citation chips.
+before the browser sees them. Dropped markers are counted and logged with their
+indices, and `done.invalid_citation_count` exposes the total for monitoring. This
+means the gateway persists exactly the text the user saw, with no hallucinated
+citation chips.
 
 Citation objects map to the `sources` event in order:
 
@@ -185,12 +190,17 @@ The public stream emits, in order:
 3. `route` — `documents` (Phase 3 has no SQL route);
 4. `token` — answer chunks, including refusal text;
 5. `sources` — validated citations (empty for refusals);
-6. `done` — ids, route, trace, latency, usage, status, cited indices, and retrieval
-   metadata.
+6. `done` — ids, route, trace, latency, time to first token, usage, status, cited
+   indices, invalid citation count, and retrieval metadata.
 
 The gateway also writes a `: ping` comment every 15 seconds. It consumes the
 upstream AI `done`, persists the assistant row, and emits its own `done` once, so
 the client cannot render a duplicate answer.
+
+`time_to_first_token_ms` is measured in the AI service from the start of the
+request until the first refusal or answer token is emitted. It is persisted in
+assistant metadata and relayed in the gateway `done` event; it is not the same as
+end-to-end browser time to first paint.
 
 | Situation               | Persisted text           | `answer_status`                    | `done` sent |
 | ----------------------- | ------------------------ | ---------------------------------- | ----------- |
@@ -209,18 +219,19 @@ question is not duplicated.
 These map to AI-service `Settings` fields. `.env.example` includes the common
 ones; the remainder use the defaults shown.
 
-| Setting                   | Default                | Purpose                                         |
-| ------------------------- | ---------------------- | ----------------------------------------------- |
-| `LLM_MODEL`               | `gemini-2.5-flash`     | Answer and rewrite model                        |
-| `LLM_TEMPERATURE`         | `0.1`                  | Generation temperature                          |
-| `LLM_MAX_OUTPUT_TOKENS`   | `1200`                 | Answer length cap                               |
-| `EMBEDDING_MODEL`         | `gemini-embedding-001` | Query and chunk embeddings                      |
-| `RETRIEVE_TOP_K`          | `30`                   | Results per retrieval arm                       |
-| `RERANK_TOP_N`            | `6`                    | Chunks kept after reranking                     |
-| `MIN_RERANK_SCORE`        | `0.25`                 | Confidence-gate threshold                       |
-| `RERANKER`                | `none`                 | `none`, `local`, or `cohere`                    |
-| `COHERE_API_KEY`          | empty                  | Required for `cohere`                           |
-| `CHAT_HISTORY_LIMIT`      | `20`                   | Turns loaded for rewrite and generation context |
+| Setting                 | Default                | Purpose                                         |
+| ----------------------- | ---------------------- | ----------------------------------------------- |
+| `LLM_MODEL`             | `gemini-2.5-flash`     | Answer and rewrite model                        |
+| `LLM_TEMPERATURE`       | `0.1`                  | Generation temperature                          |
+| `LLM_MAX_OUTPUT_TOKENS` | `1200`                 | Answer length cap                               |
+| `EMBEDDING_MODEL`       | `gemini-embedding-001` | Query and chunk embeddings                      |
+| `RETRIEVE_TOP_K`        | `30`                   | Results per retrieval arm                       |
+| `RERANK_CANDIDATES`     | `20`                   | Fused chunks passed to the reranker             |
+| `RERANK_TOP_N`          | `6`                    | Chunks kept after reranking                     |
+| `MIN_RERANK_SCORE`      | `0.25`                 | Confidence-gate threshold                       |
+| `RERANKER`              | `none`                 | `none`, `local`, or `cohere`                    |
+| `COHERE_API_KEY`        | empty                  | Required for `cohere`                           |
+| `CHAT_HISTORY_LIMIT`    | `20`                   | Turns loaded for rewrite and generation context |
 
 The gateway limits chat streams separately with `CHAT_RATE_LIMIT_PER_MIN`
 (default 20 per user per minute).
@@ -228,11 +239,17 @@ The gateway limits chat streams separately with `CHAT_RATE_LIMIT_PER_MIN`
 ## 10. Verification status
 
 Covered by tests: access-predicate construction for all three roles, RRF fusion and
-deduplication, the confidence gate, refusal handling, streamed citation validation,
-SSE parsing on both Node and web, no duplicate `done`, abort persistence,
-regenerate without a duplicate question, conversation ownership, feedback, and RTL
-citation/refusal/stop behaviour.
+deduplication, the reranker candidate cap, retrieval stage spans, the confidence
+gate, refusal handling, streamed citation validation with dropped-marker tracking,
+no-valid-citation logging, time-to-first-token metadata, SSE parsing on both Node
+and web, no duplicate `done`, abort persistence, regenerate without a duplicate
+question, conversation ownership, feedback, and RTL citation/refusal/stop
+behaviour. An opt-in PostgreSQL integration test
+(`make test-integration` with `VERITY_TEST_ADMIN_URL`) creates a disposable
+database and verifies that viewers, analysts, and admins see exactly the documents
+their role and group memberships allow.
 
-Not yet verified here: a database-backed viewer-vs-restricted leakage query, a full
-Docker cold start, and p95 time-to-first-token. Those need the indexed demo corpus
-and a live model; the plan's 2.5-second target is therefore not claimed as measured.
+Not yet verified here: a full Docker cold start and p95 time-to-first-token. Those
+need the indexed demo corpus and a live model; the plan's 2.5-second target is
+therefore not claimed as measured. The service now emits the TTFT measurement so
+that run can be performed without further instrumentation.

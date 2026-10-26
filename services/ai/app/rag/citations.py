@@ -43,6 +43,12 @@ class CitationStreamFilter:
         self._citation_count = max(0, citation_count)
         self._buffer = ""
         self.cited: set[int] = set()
+        self.dropped_indices: set[int] = set()
+        self.dropped_count = 0
+
+    def _drop(self, index: int) -> None:
+        self.dropped_indices.add(index)
+        self.dropped_count += 1
 
     def feed(self, text: str) -> str:
         self._buffer += text
@@ -73,6 +79,8 @@ class CitationStreamFilter:
                 if 1 <= index <= self._citation_count:
                     self.cited.add(index)
                     output.append(candidate)
+                else:
+                    self._drop(index)
                 self._buffer = self._buffer[close + 1 :]
                 continue
 
@@ -91,4 +99,5 @@ class CitationStreamFilter:
         if 1 <= index <= self._citation_count:
             self.cited.add(index)
             return remaining
+        self._drop(index)
         return ""

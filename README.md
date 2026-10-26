@@ -119,13 +119,16 @@ and MinIO volumes, including uploaded documents.
   signed download, admin access/group editing, retry, and delete confirmation.
 - Retrieval: follow-up query rewriting, role/group access predicates applied
   inside both SQL arms, pgvector cosine search plus Postgres full-text search,
-  Reciprocal Rank Fusion, configurable reranking (`none`, `local`, or Cohere), and
-  a score-based confidence gate. See [`docs/retrieval.md`](./docs/retrieval.md).
+  Reciprocal Rank Fusion, a `RERANK_CANDIDATES` cap before configurable reranking
+  (`none`, `local`, or Cohere), retrieval stage spans, and a score-based
+  confidence gate. See [`docs/retrieval.md`](./docs/retrieval.md).
 - Chat: persistent conversations owned per user, latest-20-turn history, SSE
   streaming with status/route/token/sources events, inline `[n]` citation
-  validation, honest refusal for weak evidence, stop, retry, regenerate, copy,
-  thumbs up/down feedback, and a source drawer with real page/section/score
-  metadata and a fresh signed document link.
+  validation (dropped markers counted and logged), honest refusal for weak
+  evidence, stop, retry, regenerate, copy, thumbs up/down feedback, and a source
+  drawer with real page/section/score metadata and a fresh signed document link.
+  Every `done` event includes AI-service `time_to_first_token_ms`, which is also
+  persisted in assistant metadata.
 - Chat failure handling: the gateway persists partial answers on stop or stream
   failure with `answer_status` (`aborted` / `error`), suppresses the upstream
   `done` event so the client never renders a duplicate, and sends a 15-second
@@ -222,6 +225,7 @@ make migrate         # apply pending SQL migrations
 make seed            # seed demo users, groups, and documents
 make verify-roles    # prove role privileges and boundaries
 make test            # Vitest (web, gateway) + pytest (AI)
+make test-integration # opt-in PostgreSQL access-filter test (VERITY_TEST_ADMIN_URL)
 make lint            # ESLint + Ruff
 make typecheck       # tsc --noEmit + mypy strict
 make check           # lint + typecheck + test
@@ -233,6 +237,10 @@ make audit           # npm audit + pip-audit
 
 - `make install` is required before `make test`, `make lint`, and `make typecheck`.
 - The role checks are integration checks: they need the Compose stack running.
+- `make test-integration` is opt-in and creates a disposable database. Point
+  `VERITY_TEST_ADMIN_URL` at a PostgreSQL admin connection, for example
+  `VERITY_TEST_ADMIN_URL=postgresql:///postgres make test-integration`. It uses
+  keyword retrieval only, so pgvector is not required.
 - CI runs web/API formatting, lint, typecheck, tests, build; AI lint, format,
   typecheck, tests; and `docker compose build`. The audit job is advisory.
 - There is no RAGAS evaluation yet. Datasets and scores land in Phase 6; nothing
@@ -240,16 +248,16 @@ make audit           # npm audit + pip-audit
 
 ## Roadmap
 
-| Phase | Scope                                                   | Status                                      |
-| ----- | ------------------------------------------------------- | ------------------------------------------- |
-| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred     |
-| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green   |
-| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green   |
-| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; live TTFT measurement deferred |
-| 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                     |
-| 5     | Router, hybrid answers, conversation memory             | Planned                                     |
-| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                     |
-| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                     |
+| Phase | Scope                                                   | Status                                                 |
+| ----- | ------------------------------------------------------- | ------------------------------------------------------ |
+| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred                |
+| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green              |
+| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green              |
+| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; DB leakage test added, live TTFT deferred |
+| 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                                |
+| 5     | Router, hybrid answers, conversation memory             | Planned                                                |
+| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                                |
+| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                                |
 
 ## Design and delivery decisions
 

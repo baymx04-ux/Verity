@@ -143,7 +143,7 @@ services:
           'CMD',
           'python',
           '-c',
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
         ]
       interval: 10s
       timeout: 5s
@@ -179,7 +179,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/api/health']
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:4000/api/health']
       interval: 10s
       timeout: 5s
       retries: 20
@@ -232,7 +232,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost/']
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/']
       interval: 10s
       timeout: 5s
       retries: 10

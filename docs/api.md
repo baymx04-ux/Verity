@@ -296,6 +296,8 @@ returns `201`:
         "low_confidence": false,
         "cited_indices": [1],
         "citation_count": 1,
+        "invalid_citation_count": 0,
+        "time_to_first_token_ms": 1180,
         "model": "gemini-2.5-flash"
       },
       "feedback": { "rating": 1, "comment": null },
@@ -346,23 +348,26 @@ event: sources
 data: {"citations":[{"id":"<chunk-uuid>","document_id":"<document-uuid>","title":"Employee Handbook","page":12,"section":"Annual leave","snippet":"All permanent employees accrue 25 days…","score":0.82}]}
 
 event: done
-data: {"message_id":"<uuid>","conversation_id":"<uuid>","route":"documents","trace_id":"<trace>","latency_ms":1840,"usage":{"prompt_tokens":1200,"completion_tokens":85},"low_confidence":false,"answer_status":"answered","cited_indices":[1],"citation_count":1,"aborted":false,"persisted":true}
+data: {"message_id":"<uuid>","conversation_id":"<uuid>","route":"documents","trace_id":"<trace>","latency_ms":1840,"time_to_first_token_ms":1180,"usage":{"prompt_tokens":1200,"completion_tokens":85},"low_confidence":false,"answer_status":"answered","cited_indices":[1],"citation_count":1,"invalid_citation_count":0,"aborted":false,"persisted":true}
 ```
 
-| Event          | Payload                                                                    | When                                   |
-| -------------- | -------------------------------------------------------------------------- | -------------------------------------- |
-| `conversation` | `{ "conversation_id": string }`                                            | Immediately after the thread is known  |
-| `status`       | `{ "stage": "rewriting" \| "retrieving" \| "writing", "message": string }` | Progress updates                       |
-| `route`        | `{ "route": "documents" }`                                                 | Before retrieval (Phase 3 is RAG-only) |
-| `token`        | `{ "text": string }`                                                       | Streamed answer chunks                 |
-| `sources`      | `{ "citations": Citation[] }`                                              | After retrieval or before `done`       |
-| `error`        | `{ "code": string, "message": string }`                                    | Recoverable or fatal stream error      |
-| `done`         | `{ message_id, conversation_id, route, trace_id, latency_ms, usage, ... }` | Successful completion only             |
+| Event          | Payload                                                                                            | When                                   |
+| -------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `conversation` | `{ "conversation_id": string }`                                                                    | Immediately after the thread is known  |
+| `status`       | `{ "stage": "rewriting" \| "retrieving" \| "writing", "message": string }`                         | Progress updates                       |
+| `route`        | `{ "route": "documents" }`                                                                         | Before retrieval (Phase 3 is RAG-only) |
+| `token`        | `{ "text": string }`                                                                               | Streamed answer chunks                 |
+| `sources`      | `{ "citations": Citation[] }`                                                                      | After retrieval or before `done`       |
+| `error`        | `{ "code": string, "message": string }`                                                            | Recoverable or fatal stream error      |
+| `done`         | `{ message_id, conversation_id, route, trace_id, latency_ms, time_to_first_token_ms, usage, ... }` | Successful completion only             |
 
 `citation` objects contain `id` (chunk id), `document_id`, `title`, `page`,
 `section`, `snippet`, and a 0–1 `score`. Inline `[n]` markers map to the entries
 in the `sources` array by order. Markers that do not map to a retrieved chunk are
-removed before the token reaches the browser.
+removed before the token reaches the browser; the number removed is reported as
+`done.invalid_citation_count` and logged by the AI service.
+`done.time_to_first_token_ms` measures AI-service time from request start to the
+first answer or refusal token, and is persisted in assistant metadata.
 
 Refusals are a normal answer, not an error: the refusal text streams as tokens,
 `sources` is empty, and `done.answer_status` is `refused` with

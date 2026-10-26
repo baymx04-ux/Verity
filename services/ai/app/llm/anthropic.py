@@ -90,9 +90,7 @@ class AnthropicLLMClient:
                         yield LLMDelta(prompt_tokens=_optional_int(usage.get("input_tokens")))
                     elif event_type == "message_delta":
                         usage = payload.get("usage") or {}
-                        yield LLMDelta(
-                            completion_tokens=_optional_int(usage.get("output_tokens"))
-                        )
+                        yield LLMDelta(completion_tokens=_optional_int(usage.get("output_tokens")))
                     elif event_type == "error":
                         error = payload.get("error") or {}
                         raise LLMError(str(error.get("message") or "Anthropic stream error"))

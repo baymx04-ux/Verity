@@ -31,6 +31,8 @@ export interface MessageMetadata {
   spans?: Record<string, number>;
   cited_indices?: number[];
   citation_count?: number;
+  invalid_citation_count?: number;
+  time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
   error_code?: string;
   [key: string]: unknown;
@@ -420,6 +422,8 @@ export class ChatService {
         : normalizeAnswerStatus(upstreamDone.answer_status);
     const citedIndices = asNumberArray(upstreamDone.cited_indices);
     const citationCount = asNumber(upstreamDone.citation_count) ?? citations.length;
+    const invalidCitationCount = asNumber(upstreamDone.invalid_citation_count) ?? 0;
+    const timeToFirstTokenMs = asNumber(upstreamDone.time_to_first_token_ms);
     const spans = asNumberRecord(upstreamDone.spans);
     const retrieval = asNumberRecord(upstreamDone.retrieval);
     const model = asString(upstreamDone.model);
@@ -430,6 +434,8 @@ export class ChatService {
       low_confidence: lowConfidence,
       cited_indices: citedIndices,
       citation_count: citationCount,
+      invalid_citation_count: invalidCitationCount,
+      time_to_first_token_ms: timeToFirstTokenMs,
       ...(model ? { model } : {}),
       ...(spans ? { spans } : {}),
       ...(retrieval ? { retrieval } : {}),
@@ -490,6 +496,8 @@ export class ChatService {
         answer_status: answerStatus,
         cited_indices: citedIndices,
         citation_count: citationCount,
+        invalid_citation_count: invalidCitationCount,
+        time_to_first_token_ms: timeToFirstTokenMs,
         aborted: false,
         persisted: messageId !== null,
       });

@@ -93,7 +93,7 @@ describe('chat, conversations, and feedback api', () => {
     const ai = createAiClientStub({
       chatStream: async () =>
         new Response(
-          'event: route\ndata: {"route":"documents"}\n\nevent: token\ndata: {"text":"You get 25 days."}\n\nevent: done\ndata: {"usage":{"prompt_tokens":10,"completion_tokens":5},"latency_ms":120}\n\n',
+          'event: route\ndata: {"route":"documents"}\n\nevent: token\ndata: {"text":"You get 25 days."}\n\nevent: done\ndata: {"usage":{"prompt_tokens":10,"completion_tokens":5},"latency_ms":120,"time_to_first_token_ms":950,"invalid_citation_count":0}\n\n',
           { headers: { 'Content-Type': 'text/event-stream' } },
         ),
     });
@@ -117,6 +117,8 @@ describe('chat, conversations, and feedback api', () => {
     expect(res.text).toContain('You get 25 days.');
     expect(res.text).toContain('event: done');
     expect(res.text).toContain(messageId);
+    expect(res.text).toContain('"time_to_first_token_ms":950');
+    expect(res.text).toContain('"invalid_citation_count":0');
 
     // The upstream done event is suppressed; the gateway emits one done after
     // persistence so the browser cannot append the same assistant message twice.

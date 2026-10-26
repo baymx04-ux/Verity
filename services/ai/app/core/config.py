@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     embedding_cache_ttl_seconds: int = 60 * 60 * 24 * 7
 
     retrieve_top_k: int = 30
+    rerank_candidates: int = 20
     rerank_top_n: int = 6
     min_rerank_score: float = 0.25
     reranker: str = "none"

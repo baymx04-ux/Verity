@@ -8,7 +8,7 @@ AI_PYTHON := $(VENV)/bin/python
 .DEFAULT_GOAL := help
 
 .PHONY: help env install up infra down clean ps logs build migrate seed \
-	test test-node test-ai lint typecheck format format-check check verify-roles audit
+	test test-node test-ai test-integration lint typecheck format format-check check verify-roles audit
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -61,6 +61,9 @@ test-node: ## Run frontend and gateway tests
 
 test-ai: ## Run AI service tests
 	cd services/ai && .venv/bin/python -m pytest
+
+test-integration: ## Run opt-in PostgreSQL integration tests (needs VERITY_TEST_ADMIN_URL)
+	cd services/ai && .venv/bin/python -m pytest -m integration
 
 lint: ## Lint all code
 	npm run lint

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+import time
+from dataclasses import replace
 from typing import Protocol
 
 import psycopg
@@ -115,8 +116,9 @@ def _row_to_chunk(row: dict[str, object], *, score_field: str) -> RetrievedChunk
 class PostgresRetrievalStore:
     """Runs a vector arm and a full-text arm with the same ACL predicate."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, database_url: str | None = None) -> None:
         self._settings = settings
+        self._database_url = database_url or settings.database_url
 
     async def search(
         self,
@@ -132,7 +134,7 @@ class PostgresRetrievalStore:
         errors: list[Exception] = []
 
         async with await psycopg.AsyncConnection.connect(
-            self._settings.database_url,
+            self._database_url,
             row_factory=dict_row,
         ) as connection:
             if embedding is not None:
@@ -223,28 +225,54 @@ class RetrievalService:
         self._reranker = reranker
 
     async def retrieve(self, question: str, access: AccessContext) -> RetrievalResult:
+        started = time.perf_counter()
         embedding: list[float] | None = None
         try:
             embedding = await self._embeddings.embed_query(question)
         except Exception as exc:  # FTS remains useful if embeddings are down
             logger.warning("query embedding failed; using keyword retrieval only: %s", exc)
+        embedding_ms = int((time.perf_counter() - started) * 1000)
 
+        search_started = time.perf_counter()
         vector_results, keyword_results = await self._store.search(
             question=question,
             embedding=embedding,
             access=access,
             limit=max(1, self._settings.retrieve_top_k),
         )
-        fused = fuse_rrf(vector_results, keyword_results)
-        if not fused:
-            return RetrievalResult(chunks=[], citations=[], low_confidence=True, best_score=0.0)
+        search_ms = int((time.perf_counter() - search_started) * 1000)
 
-        candidates = fused[: max(self._settings.rerank_top_n * 4, self._settings.rerank_top_n)]
+        fusion_started = time.perf_counter()
+        fused = fuse_rrf(vector_results, keyword_results)
+        fusion_ms = int((time.perf_counter() - fusion_started) * 1000)
+
+        spans = {
+            "retrieval_embedding": embedding_ms,
+            "retrieval_search": search_ms,
+            "retrieval_fusion": fusion_ms,
+        }
+        if not fused:
+            return RetrievalResult(
+                chunks=[],
+                citations=[],
+                low_confidence=True,
+                best_score=0.0,
+                spans=spans,
+            )
+
+        candidate_limit = max(
+            self._settings.rerank_top_n,
+            self._settings.rerank_candidates,
+        )
+        candidates = fused[:candidate_limit]
+        rerank_started = time.perf_counter()
         reranked = await self._reranker.rerank(
             question,
             candidates,
             top_n=max(1, self._settings.rerank_top_n),
         )
+        spans["retrieval_rerank"] = int((time.perf_counter() - rerank_started) * 1000)
+
         best_score = reranked[0].score if reranked else 0.0
         low_confidence = not reranked or best_score < self._settings.min_rerank_score
         citations = [] if low_confidence else build_citations(reranked)
@@ -253,14 +281,9 @@ class RetrievalService:
             citations=citations,
             low_confidence=low_confidence,
             best_score=best_score,
+            spans=spans,
         )
 
 
 def to_vector_literal(values: list[float]) -> str:
     return "[" + ",".join(f"{value:.7f}" for value in values) + "]"
-
-
-@dataclass(slots=True)
-class RetrievalSpan:
-    name: str
-    duration_ms: int
