@@ -12,6 +12,8 @@ export interface AiIngestResult {
   status: 'indexed';
 }
 
+export type ChatRoute = 'documents' | 'sql';
+
 export interface AiChatStreamPayload {
   conversation_id: string;
   question: string;
@@ -22,6 +24,8 @@ export interface AiChatStreamPayload {
   };
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   trace_id?: string | null;
+  /** Phase 4 uses an explicit mode; Phase 5 replaces this with a router. */
+  route?: ChatRoute;
 }
 export class AiRequestError extends Error {
   constructor(
@@ -128,7 +132,7 @@ export class InternalAiClient {
 
   async patchSchemaCatalog(
     viewName: string,
-    body: { description?: string; columns?: unknown[] },
+    body: { description?: string | undefined; columns?: unknown[] | undefined },
   ): Promise<unknown> {
     return this.request<unknown>('PATCH', `/schema/catalog/${viewName}`, body, 30_000);
   }

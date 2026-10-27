@@ -1,8 +1,9 @@
-import { ArrowUp, BookOpen, FileText, Square } from 'lucide-react';
+import { ArrowUp, Database, FileText, Square } from 'lucide-react';
 import { type KeyboardEvent, useRef } from 'react';
 
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
+import type { ChatRoute } from './chat-api';
 
 interface ComposerProps {
   question: string;
@@ -11,6 +12,8 @@ interface ComposerProps {
   onStop?: () => void;
   isStreaming: boolean;
   disabled?: boolean;
+  mode: ChatRoute;
+  onModeChange: (mode: ChatRoute) => void;
 }
 
 export function Composer({
@@ -20,6 +23,8 @@ export function Composer({
   onStop,
   isStreaming,
   disabled,
+  mode,
+  onModeChange,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -33,8 +38,8 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-line bg-surface/90 backdrop-blur p-4 sm:p-5">
-      <div className="relative rounded-xl border border-slate-200 bg-white shadow-xs focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-100 transition-all">
+    <div className="border-t border-line bg-surface/90 p-4 backdrop-blur sm:p-5">
+      <div className="relative rounded-xl border border-slate-200 bg-white shadow-xs transition-all focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-100">
         <label htmlFor="composer-input" className="sr-only">
           Ask a question
         </label>
@@ -45,20 +50,48 @@ export function Composer({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder="Ask a question about your documents…"
+          placeholder={
+            mode === 'sql'
+              ? 'Ask a data question, e.g. “Revenue by region last quarter”…'
+              : 'Ask a question about your documents…'
+          }
           className="min-h-16 w-full resize-none border-0 bg-transparent px-4 py-3 text-body-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
         />
 
-        <div className="flex items-center justify-between px-3 py-2 border-t border-slate-100 bg-slate-50/60 rounded-b-xl">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-xs">
-              <FileText className="size-3 text-sky-600" aria-hidden="true" />
+        <div className="flex items-center justify-between gap-2 rounded-b-xl border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+          <div
+            className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-xs"
+            role="group"
+            aria-label="Answer mode"
+          >
+            <button
+              type="button"
+              aria-pressed={mode === 'documents'}
+              onClick={() => onModeChange('documents')}
+              disabled={isStreaming}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                mode === 'documents'
+                  ? 'bg-sky-50 text-sky-800'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+              }`}
+            >
+              <FileText className="size-3" aria-hidden="true" />
               Documents
-            </span>
-            <span className="hidden items-center gap-1 text-[11px] text-slate-400 sm:inline-flex">
-              <BookOpen className="size-3" aria-hidden="true" />
-              Inline citations
-            </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === 'sql'}
+              onClick={() => onModeChange('sql')}
+              disabled={isStreaming}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                mode === 'sql'
+                  ? 'bg-emerald-50 text-emerald-800'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+              }`}
+            >
+              <Database className="size-3" aria-hidden="true" />
+              Data
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -92,14 +125,17 @@ export function Composer({
 
       <p className="mt-2 text-center text-xs text-ink-400">
         Press{' '}
-        <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">
+        <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[11px]">
           Enter
         </kbd>{' '}
         to send,{' '}
-        <kbd className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded border border-slate-200">
+        <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[11px]">
           Shift + Enter
         </kbd>{' '}
-        for a new line. Citations map to the retrieved document passages.
+        for a new line.{' '}
+        {mode === 'sql'
+          ? 'Data answers show the read-only SQL and result table.'
+          : 'Citations map to the retrieved document passages.'}
       </p>
     </div>
   );

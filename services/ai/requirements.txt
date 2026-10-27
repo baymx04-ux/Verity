@@ -6,6 +6,7 @@ pydantic==2.10.4
 pydantic-settings==2.7.0
 pypdf==5.1.0
 python-docx==1.1.2
+PyYAML==6.0.2
 redis==5.2.1
 sqlglot==26.14.0
 uvicorn[standard]==0.34.0

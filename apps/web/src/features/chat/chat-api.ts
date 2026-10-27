@@ -20,8 +20,18 @@ export interface Citation {
   score: number;
 }
 
+export interface SqlResultPreview {
+  sql?: string | null;
+  query?: string | null;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  row_count: number;
+  truncated: boolean;
+  execution_ms?: number | undefined;
+}
+
 export interface MessageMetadata {
-  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error';
+  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification';
   aborted?: boolean;
   low_confidence?: boolean;
   model?: string;
@@ -31,6 +41,7 @@ export interface MessageMetadata {
   invalid_citation_count?: number;
   time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
+  sql_outcome?: Record<string, unknown>;
   error_code?: string;
   [key: string]: unknown;
 }
@@ -43,7 +54,7 @@ export interface ChatMessage {
   route: string | null;
   citations: Citation[];
   sql_query?: string | null | undefined;
-  sql_result_preview?: unknown | null | undefined;
+  sql_result_preview?: SqlResultPreview | null | undefined;
   trace_id?: string | null | undefined;
   latency_ms?: number | null | undefined;
   metadata?: MessageMetadata | undefined;
@@ -75,7 +86,10 @@ export interface StreamDonePayload {
   time_to_first_token_ms?: number | null;
   aborted?: boolean;
   persisted?: boolean;
+  sql_outcome?: Record<string, unknown>;
 }
+
+export type ChatRoute = 'documents' | 'sql';
 
 export interface StreamHandlers {
   onConversation?: (conversationId: string) => void;
@@ -83,6 +97,7 @@ export interface StreamHandlers {
   onRoute?: (route: string) => void;
   onToken?: (text: string) => void;
   onSources?: (citations: Citation[]) => void;
+  onSql?: (result: SqlResultPreview) => void;
   onDone?: (payload: StreamDonePayload) => void;
   onError?: (error: { code: string; message: string }) => void;
 }
@@ -91,6 +106,7 @@ export interface StreamChatOptions {
   conversationId?: string | undefined;
   question?: string | undefined;
   regenerate?: boolean | undefined;
+  route?: ChatRoute | undefined;
   handlers: StreamHandlers;
   signal?: AbortSignal | undefined;
 }
@@ -137,6 +153,7 @@ export async function streamChat({
   conversationId,
   question,
   regenerate,
+  route,
   handlers,
   signal,
 }: StreamChatOptions): Promise<void> {
@@ -159,6 +176,7 @@ export async function streamChat({
         conversation_id: conversationId,
         question,
         regenerate: regenerate || undefined,
+        route,
       }),
     };
     if (signal) {
@@ -213,6 +231,24 @@ export async function streamChat({
       handlers.onToken?.(payload.text);
     } else if (event === 'sources' && Array.isArray(payload.citations)) {
       handlers.onSources?.(payload.citations as Citation[]);
+    } else if (event === 'sql') {
+      const columns = Array.isArray(payload.columns)
+        ? payload.columns.filter((column): column is string => typeof column === 'string')
+        : [];
+      const rows = Array.isArray(payload.rows)
+        ? payload.rows.filter(
+            (row): row is Record<string, unknown> => row !== null && typeof row === 'object',
+          )
+        : [];
+      handlers.onSql?.({
+        sql: typeof payload.sql === 'string' ? payload.sql : null,
+        query: typeof payload.query === 'string' ? payload.query : null,
+        columns,
+        rows,
+        row_count: typeof payload.row_count === 'number' ? payload.row_count : rows.length,
+        truncated: payload.truncated === true,
+        execution_ms: typeof payload.execution_ms === 'number' ? payload.execution_ms : undefined,
+      });
     } else if (event === 'done') {
       handlers.onDone?.(payload as StreamDonePayload);
     } else if (event === 'error') {

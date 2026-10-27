@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 
-import type { InternalAiClient } from '../ai-client/internal';
+import type { ChatRoute, InternalAiClient } from '../ai-client/internal';
 import type { Logger } from '../config/logger';
 import type { AuthUser } from '../types/auth';
 import { createSseParser } from './sse';
@@ -71,6 +71,7 @@ export interface StreamChatOptions {
   conversationId?: string | undefined;
   question?: string | undefined;
   regenerate?: boolean | undefined;
+  route?: ChatRoute | undefined;
   onEvent: (event: string, data: unknown) => void;
   signal?: AbortSignal | undefined;
 }
@@ -222,6 +223,7 @@ export class ChatService {
   async streamChat(options: StreamChatOptions): Promise<void> {
     const { user, onEvent, signal } = options;
     const regenerate = options.regenerate === true;
+    const route: ChatRoute = options.route === 'sql' ? 'sql' : 'documents';
     let convId = options.conversationId;
     let prompt = (options.question ?? '').trim();
     let createdNew = false;
@@ -319,6 +321,7 @@ export class ChatService {
           group_ids: user.groupIds || [],
         },
         history,
+        route,
       },
       signal,
     );
@@ -346,13 +349,15 @@ export class ChatService {
         const route = asString(payload.route);
         if (route) detectedRoute = route;
       } else if (event === 'sql') {
-        // Capture the SQL query and a preview of the result rows for persistence
-        sqlQuery = asString(payload.sql);
+        // Persist the displayed result (already capped by the AI service at
+        // 200 rows) so reopening a conversation restores the SQL panel.
+        sqlQuery = asString(payload.sql) ?? asString(payload.query);
         if (payload.rows !== undefined) {
-          // Store first 20 rows as the preview to avoid storing huge results
-          const rows = Array.isArray(payload.rows) ? payload.rows.slice(0, 20) : [];
+          const rows = Array.isArray(payload.rows) ? payload.rows.slice(0, 200) : [];
           sqlResultPreview = {
-            columns: payload.columns,
+            sql: sqlQuery,
+            query: sqlQuery,
+            columns: Array.isArray(payload.columns) ? payload.columns : [],
             rows,
             row_count: payload.row_count,
             truncated: payload.truncated,
@@ -444,6 +449,7 @@ export class ChatService {
     const timeToFirstTokenMs = asNumber(upstreamDone.time_to_first_token_ms);
     const spans = asNumberRecord(upstreamDone.spans);
     const retrieval = asNumberRecord(upstreamDone.retrieval);
+    const sqlOutcome = asRecord(upstreamDone.sql_outcome);
     const model = asString(upstreamDone.model);
 
     const metadata: MessageMetadata = {
@@ -457,6 +463,7 @@ export class ChatService {
       ...(model ? { model } : {}),
       ...(spans ? { spans } : {}),
       ...(retrieval ? { retrieval } : {}),
+      ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
       ...(failure ? { error_code: failure.code } : {}),
     };
 
@@ -521,6 +528,7 @@ export class ChatService {
         time_to_first_token_ms: timeToFirstTokenMs,
         aborted: false,
         persisted: messageId !== null,
+        ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
       });
     }
   }

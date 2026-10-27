@@ -1,8 +1,8 @@
-"""SQL repair loop — re-generates SQL when the executor returns an error.
+"""SQL repair loop — re-generates SQL after validation or execution failure.
 
-After a failed execution the LLM is given the original question, the failed
-SQL, and the error message, and asked to produce a corrected query.
-Maximum MAX_REPAIRS attempts (plan D11: 2).
+The LLM receives the original question, the failed SQL, and the sanitized error
+message. At most ``SQL_MAX_REPAIRS`` attempts are made (default 2). Every
+generated query is validated again before it can reach the database.
 """
 
 from __future__ import annotations
@@ -10,21 +10,21 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from app.core.config import Settings
 from app.llm.base import LLMClient, LLMError
 from app.sql.execute import ExecutionResult
+from app.sql.execute import execute as sql_execute
 from app.sql.generate import GenerationResult, generate_sql
 from app.sql.validate import ValidationResult, validate
 
 logger = logging.getLogger(__name__)
-
-MAX_REPAIRS = 2
 
 _REPAIR_PREFIX = (
     "The SQL query you generated previously failed validation or execution.\n"
     "Original question: {question}\n\n"
     "Failed SQL:\n```sql\n{sql}\n```\n\n"
     "Error: {error}\n\n"
-    "Please generate a corrected SQL query."
+    "Generate a corrected, safe SELECT query. Return only the JSON object."
 )
 
 
@@ -42,22 +42,30 @@ async def repair_loop(
     first_sql: str,
     first_error: str,
     llm: LLMClient,
+    settings: Settings,
     catalog_context: str = "",
     few_shot_examples: list[dict[str, str]] | None = None,
-    settings: object,  # Settings passed through to executor
-) -> tuple[GenerationResult | None, ValidationResult | None, ExecutionResult | None, list[RepairAttempt]]:
-    """Attempt up to MAX_REPAIRS times to produce a working SQL query.
+) -> tuple[
+    GenerationResult | None,
+    ValidationResult | None,
+    ExecutionResult | None,
+    list[RepairAttempt],
+    int,
+    int,
+]:
+    """Attempt to repair a failing query.
 
-    Returns (generation, validation, execution, attempts) for the first
-    successful attempt, or the last failing attempt if all repairs fail.
+    Returns ``(generation, validation, execution, attempts, prompt_tokens,
+    completion_tokens)``. The first three values are the first successful
+    attempt, or ``None`` when every repair fails.
     """
-    from app.sql.execute import execute as sql_execute  # local import to avoid cycles
-
     attempts: list[RepairAttempt] = []
     current_sql = first_sql
     current_error = first_error
+    prompt_tokens = 0
+    completion_tokens = 0
 
-    for attempt_num in range(1, MAX_REPAIRS + 1):
+    for attempt_number in range(1, max(1, settings.sql_max_repairs) + 1):
         repair_question = _REPAIR_PREFIX.format(
             question=question,
             sql=current_sql,
@@ -65,47 +73,69 @@ async def repair_loop(
         )
 
         try:
-            gen = await generate_sql(
+            generation = await generate_sql(
                 repair_question,
                 llm=llm,
                 catalog_context=catalog_context,
                 few_shot_examples=few_shot_examples,
+                reference_date=settings.sql_reference_date,
             )
         except LLMError as exc:
-            logger.warning("sql_repair attempt %d llm error: %s", attempt_num, exc)
+            logger.warning("sql_repair attempt %d llm error: %s", attempt_number, exc)
             break
 
-        if gen.type != "sql" or not gen.sql:
-            logger.info("sql_repair attempt %d returned clarification; stopping", attempt_num)
+        prompt_tokens += generation.prompt_tokens
+        completion_tokens += generation.completion_tokens
+
+        if generation.type != "sql" or not generation.sql:
+            logger.info("sql_repair attempt %d returned clarification; stopping", attempt_number)
             break
 
-        val = validate(gen.sql)
-        attempt = RepairAttempt(attempt=attempt_num, sql=gen.sql, validation=val)
+        validation = validate(
+            generation.sql,
+            display_limit=settings.sql_display_limit,
+            hard_limit=settings.sql_hard_limit,
+            max_joins=settings.sql_max_joins,
+            max_relations=settings.sql_max_relations,
+            max_subquery_depth=settings.sql_max_subquery_depth,
+        )
+        attempt = RepairAttempt(
+            attempt=attempt_number,
+            sql=generation.sql,
+            validation=validation,
+        )
         attempts.append(attempt)
 
-        if not val.ok:
+        if not validation.ok:
             logger.info(
                 "sql_repair attempt %d validation failed: %s",
-                attempt_num,
-                val.error,
+                attempt_number,
+                validation.error,
             )
-            current_sql = gen.sql
-            current_error = val.error
+            current_sql = generation.sql
+            current_error = validation.error
             continue
 
-        exec_result = await sql_execute(val.sql, settings)  # type: ignore[arg-type]
-        attempt.execution = exec_result
+        execution = await sql_execute(validation.sql, settings)
+        attempt.execution = execution
 
-        if exec_result.ok:
-            logger.info("sql_repair attempt %d succeeded", attempt_num)
-            return gen, val, exec_result, attempts
+        if execution.ok:
+            logger.info("sql_repair attempt %d succeeded", attempt_number)
+            return (
+                generation,
+                validation,
+                execution,
+                attempts,
+                prompt_tokens,
+                completion_tokens,
+            )
 
-        current_sql = val.sql
-        current_error = exec_result.error
+        current_sql = validation.sql
+        current_error = execution.error
         logger.info(
             "sql_repair attempt %d execution failed: %s",
-            attempt_num,
-            exec_result.error,
+            attempt_number,
+            execution.error,
         )
 
-    return None, None, None, attempts
+    return None, None, None, attempts, prompt_tokens, completion_tokens

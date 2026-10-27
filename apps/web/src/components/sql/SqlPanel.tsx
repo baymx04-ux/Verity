@@ -9,7 +9,7 @@
  *   - Optional CSV download (client-side, plan D17)
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { ChevronDown, Copy, Check, Download, Database, AlertTriangle } from 'lucide-react';
 
 export interface SqlResult {
@@ -27,6 +27,7 @@ interface SqlPanelProps {
 }
 
 export function SqlPanel({ result, className = '' }: SqlPanelProps) {
+  const panelId = useId();
   const [copied, setCopied] = useState(false);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -82,7 +83,7 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
   return (
     <details
       className={`group mt-3 overflow-hidden rounded-nested border border-line bg-surface ${className}`}
-      id="sql-panel"
+      id={`sql-panel-${panelId}`}
     >
       <summary
         className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-label-md text-ink-600 hover:bg-muted [&::-webkit-details-marker]:hidden"
@@ -106,7 +107,6 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
             onClick={handleCopy}
             className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-muted hover:text-ink-700"
             aria-label="Copy SQL to clipboard"
-            id="sql-copy-btn"
           >
             {copied ? (
               <Check aria-hidden="true" className="size-3.5 text-success" />
@@ -141,7 +141,6 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
               onClick={handleCsvDownload}
               className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-muted hover:text-ink-700"
               aria-label="Download results as CSV"
-              id="sql-csv-download-btn"
             >
               <Download aria-hidden="true" className="size-3.5" />
               CSV
@@ -173,38 +172,40 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
 }
 
 // ---------------------------------------------------------------------------
-// SQL syntax highlighter (minimal, no external dep — plan D15 allows Prism but
-// we keep this self-contained to avoid bundle size cost on the documents route)
+// SQL syntax highlighter
+//
+// This tokenizes SQL and emits React spans. It intentionally avoids
+// dangerouslySetInnerHTML so a string literal in generated SQL can never become
+// executable markup.
 // ---------------------------------------------------------------------------
 
-function SqlHighlight({ sql }: { sql: string }) {
-  // Very lightweight keyword colouring — enough to be readable.
-  const highlighted = sql
-    .replace(
-      /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|WITH|AS|AND|OR|NOT|IN|IS|NULL|DISTINCT|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|CASE|WHEN|THEN|ELSE|END|EXTRACT|DATE_TRUNC|CAST|INTERVAL|FILTER)\b/gi,
-      '<span class="sql-kw">$1</span>',
-    )
-    .replace(
-      /\b(business_ro\.\w+)\b/g,
-      '<span class="sql-rel">$1</span>',
-    )
-    .replace(/'([^']*)'/g, '<span class="sql-str">\'$1\'</span>');
+const SQL_TOKEN =
+  /(--[^\n]*|'(?:''|[^'])*'|\b(?:SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|ON|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|OFFSET|WITH|AS|AND|OR|NOT|IN|IS|NULL|DISTINCT|COUNT|SUM|AVG|MIN|MAX|ROUND|COALESCE|CASE|WHEN|THEN|ELSE|END|EXTRACT|DATE_TRUNC|CAST|INTERVAL|FILTER|BETWEEN|DESC|ASC|TRUE|FALSE)\b|\b\d+(?:\.\d+)?\b|\bbusiness_ro\.\w+\b)/gi;
 
+function SqlHighlight({ sql }: { sql: string }) {
+  const parts = sql.split(SQL_TOKEN);
   return (
-    <>
-      <style>{`
-        .sql-block { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
-        .sql-kw { color: #0284c7; font-weight: 600; }
-        .sql-rel { color: #059669; }
-        .sql-str { color: #b45309; }
-      `}</style>
-      <pre
-        className="sql-block overflow-x-auto rounded-control bg-muted p-3 text-ink-700"
-        // Safe: we only inject span tags with controlled class names; no user content
-        dangerouslySetInnerHTML={{ __html: highlighted }}
-        aria-label="Generated SQL query"
-      />
-    </>
+    <pre
+      className="overflow-x-auto rounded-control bg-muted p-3 font-mono text-[12px] leading-relaxed text-ink-700"
+      aria-label="Generated SQL query"
+    >
+      {parts.map((part, index) => {
+        if (!part) return null;
+        let className = '';
+        if (index % 2 === 1) {
+          if (/^--/.test(part)) className = 'text-ink-400 italic';
+          else if (/^'/.test(part)) className = 'text-amber-700';
+          else if (/^business_ro\./i.test(part)) className = 'text-emerald-700';
+          else if (/^\d/.test(part)) className = 'text-violet-700';
+          else className = 'font-semibold text-sky-700';
+        }
+        return (
+          <span key={index} className={className}>
+            {part}
+          </span>
+        );
+      })}
+    </pre>
   );
 }
 

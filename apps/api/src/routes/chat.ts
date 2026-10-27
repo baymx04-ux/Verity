@@ -19,6 +19,7 @@ const chatStreamSchema = z
     conversation_id: z.string().uuid().optional(),
     question: z.string().trim().min(1, 'Question cannot be empty').max(4000).optional(),
     regenerate: z.boolean().optional(),
+    route: z.enum(['documents', 'sql']).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.regenerate) {
@@ -95,6 +96,7 @@ export function createChatRouter({ chatService, logger, config }: ChatRouterOpti
         ...(parsed.data.conversation_id ? { conversationId: parsed.data.conversation_id } : {}),
         ...(parsed.data.question ? { question: parsed.data.question } : {}),
         ...(parsed.data.regenerate ? { regenerate: true } : {}),
+        ...(parsed.data.route ? { route: parsed.data.route } : {}),
         onEvent: writeEvent,
         signal: controller.signal,
       });

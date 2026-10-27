@@ -1,3 +1,4 @@
+from datetime import date
 from functools import lru_cache
 from urllib.parse import quote
 
@@ -70,14 +71,26 @@ class Settings(BaseSettings):
 
     sql_display_limit: int = 200
     sql_hard_limit: int = 1000
+    sql_timeout_ms: int = 5000
     sql_max_repairs: int = 2
+    sql_max_joins: int = 5
+    sql_max_subquery_depth: int = 3
+    sql_max_relations: int = 8
+    sql_reference_date: date = date(2026, 9, 30)
 
     @property
     def database_url(self) -> str:
-        user = quote(self.verity_app_user, safe="")
-        password = quote(self.verity_app_password.get_secret_value(), safe="")
+        return self._postgres_url(self.verity_app_user, self.verity_app_password)
+
+    @property
+    def sql_database_url(self) -> str:
+        return self._postgres_url(self.sql_ro_user, self.sql_ro_password)
+
+    def _postgres_url(self, user: str, password: SecretStr) -> str:
+        quoted_user = quote(user, safe="")
+        quoted_password = quote(password.get_secret_value(), safe="")
         return (
-            f"postgresql://{user}:{password}"
+            f"postgresql://{quoted_user}:{quoted_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 

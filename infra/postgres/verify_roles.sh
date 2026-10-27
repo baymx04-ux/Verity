@@ -96,6 +96,24 @@ expect "sql role can select the harness view" "t" \
 expect "sql role cannot insert into the harness view" "f" \
   "$(super "SELECT has_table_privilege('$RO_USER', 'business_ro.v_health', 'INSERT')")"
 
+# --- Phase 4 business surface ------------------------------------------------
+for view in \
+  v_regions v_products v_customers v_orders v_order_items v_returns \
+  v_support_tickets v_employees v_revenue_daily v_revenue_monthly v_product_performance
+do
+  expect "sql role can select business_ro.${view}" "t" \
+    "$(super "SELECT has_table_privilege('$RO_USER', 'business_ro.${view}', 'SELECT')")"
+done
+
+expect "sql role cannot select business base tables" "f" \
+  "$(super "SELECT has_table_privilege('$RO_USER', 'business.orders', 'SELECT')")"
+
+expect "app role cannot select business base tables" "f" \
+  "$(super "SELECT has_table_privilege('$APP_USER', 'business.orders', 'SELECT')")"
+
+expect "sql role cannot select the schema catalog" "f" \
+  "$(super "SELECT has_table_privilege('$RO_USER', 'app.schema_catalog', 'SELECT')")"
+
 expect "sql role cannot execute pg_sleep" "f" \
   "$(super "SELECT has_function_privilege('$RO_USER', 'pg_sleep(double precision)', 'EXECUTE')")"
 
@@ -104,6 +122,21 @@ expect "read-only role can select" "1" \
 
 expect_failure "read-only role cannot write" \
   as_ro "INSERT INTO business_ro.v_health (ok) VALUES (2)"
+
+expect_failure "read-only role cannot truncate business data" \
+  as_ro "TRUNCATE business.orders"
+
+expect_failure "read-only role cannot create DDL in business" \
+  as_ro "CREATE TABLE business.role_check_evil (id integer)"
+
+expect_failure "read-only role cannot read app tables" \
+  as_ro "SELECT count(*) FROM app.users"
+
+expect_failure "read-only role cannot reach the schema catalog" \
+  as_ro "SELECT count(*) FROM app.schema_catalog"
+
+expect_failure "app role cannot read business data" \
+  as_app "SELECT count(*) FROM business.orders"
 
 # --- Positive write access for the app role --------------------------------
 super "DROP TABLE IF EXISTS $HARNESS_TABLE" >/dev/null

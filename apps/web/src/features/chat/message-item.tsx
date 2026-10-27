@@ -14,12 +14,13 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+import { SqlPanel, type SqlResult } from '../../components/sql/SqlPanel';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Dialog } from '../../components/ui/dialog';
 import { IconButton } from '../../components/ui/icon-button';
 import { Textarea } from '../../components/ui/textarea';
-import type { ChatMessage, Citation } from './chat-api';
+import type { ChatMessage, Citation, SqlResultPreview } from './chat-api';
 import { CitationChip } from './citation-chip';
 
 interface MessageItemProps {
@@ -153,14 +154,22 @@ export function MessageItem({
     message.content.includes("I don't have enough information");
   const isAborted = metadata.answer_status === 'aborted' || metadata.aborted === true;
   const isError = metadata.answer_status === 'error';
+  const isClarification = metadata.answer_status === 'clarification';
+  const sqlResult = toSqlResult(message.sql_query, message.sql_result_preview);
 
   const answerLabel = isAborted
     ? 'Stopped'
     : isError
       ? 'Generation failed'
-      : isRefusal
-        ? 'Insufficient evidence'
-        : 'Grounded answer';
+      : isClarification
+        ? 'Clarification needed'
+        : isRefusal
+          ? 'Insufficient evidence'
+          : message.route === 'sql'
+            ? 'Data answer'
+            : 'Grounded answer';
+  const routeLabel =
+    message.route === 'documents' ? 'Documents' : message.route === 'sql' ? 'Data' : message.route;
 
   return (
     <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs sm:p-5">
@@ -185,7 +194,7 @@ export function MessageItem({
         <div className="flex items-center gap-2">
           {message.route && (
             <Badge variant={message.route === 'documents' ? 'info' : 'live'}>
-              {message.route === 'documents' ? 'Documents' : message.route}
+              {routeLabel}
             </Badge>
           )}
           {message.latency_ms && (
@@ -221,6 +230,12 @@ export function MessageItem({
             Generation failed before the answer completed.
           </p>
         )}
+        {isClarification && (
+          <p className="mt-2 text-[11px] text-sky-700">
+            Tell Verity which metric, date range, or segment you mean and ask again.
+          </p>
+        )}
+        {sqlResult ? <SqlPanel result={sqlResult} /> : null}
       </div>
 
       <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs text-ink-500">
@@ -332,4 +347,23 @@ export function MessageItem({
       </Dialog>
     </article>
   );
+}
+
+function toSqlResult(
+  query: string | null | undefined,
+  preview: SqlResultPreview | null | undefined,
+): SqlResult | null {
+  if (!preview || !Array.isArray(preview.columns) || !Array.isArray(preview.rows)) {
+    return null;
+  }
+  const sql = query || preview.sql || preview.query;
+  if (!sql) return null;
+  return {
+    sql,
+    columns: preview.columns,
+    rows: preview.rows,
+    row_count: preview.row_count ?? preview.rows.length,
+    truncated: preview.truncated === true,
+    execution_ms: preview.execution_ms ?? 0,
+  };
 }

@@ -31,8 +31,12 @@ rng = random.Random(SEED)
 # Helpers
 # ---------------------------------------------------------------------------
 
-START = datetime(2023, 1, 1, tzinfo=timezone.utc)
-END = datetime(2024, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+# Fixed reference date used by the Phase 4 text-to-SQL prompts. The dataset
+# covers exactly the 24 months ending on this date so date-relative demo
+# questions ("last quarter", "last month") have deterministic answers.
+REFERENCE_DATE = date(2026, 9, 30)
+START = datetime(2024, 10, 1, tzinfo=timezone.utc)
+END = datetime(2026, 9, 30, 23, 59, 59, tzinfo=timezone.utc)
 
 
 def rand_dt(lo: datetime = START, hi: datetime = END) -> datetime:
@@ -40,7 +44,7 @@ def rand_dt(lo: datetime = START, hi: datetime = END) -> datetime:
     return lo + timedelta(seconds=rng.uniform(0, delta))
 
 
-def rand_date(lo: date = date(2015, 1, 1), hi: date = date(2023, 6, 1)) -> date:
+def rand_date(lo: date = date(2015, 1, 1), hi: date = REFERENCE_DATE) -> date:
     delta = (hi - lo).days
     return lo + timedelta(days=rng.randint(0, delta))
 
@@ -91,11 +95,31 @@ CATEGORIES: dict[str, list[str]] = {
 
 SEGMENTS = ["consumer", "corporate", "small_business"]
 CHANNELS = ["web", "mobile", "api", "phone"]
-COUNTRIES = ["US", "US", "US", "US", "US", "CA", "GB", "DE", "FR", "AU"]
-CITIES = [
-    "New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
-    "Philadelphia", "San Antonio", "San Diego", "Dallas", "San Jose",
-    "Toronto", "London", "Berlin", "Paris", "Sydney",
+REGIONS = [
+    (1, "North America", "United States"),
+    (2, "Europe", "Germany"),
+    (3, "United Kingdom & Ireland", "United Kingdom"),
+    (4, "Asia Pacific", "Australia"),
+    (5, "Latin America", "Brazil"),
+]
+# (city, ISO country, region_id), repeated to approximate customer mix.
+LOCATIONS = [
+    ("New York", "US", 1),
+    ("Los Angeles", "US", 1),
+    ("Chicago", "US", 1),
+    ("Houston", "US", 1),
+    ("Phoenix", "US", 1),
+    ("Toronto", "CA", 1),
+    ("London", "GB", 3),
+    ("Manchester", "GB", 3),
+    ("Berlin", "DE", 2),
+    ("Munich", "DE", 2),
+    ("Paris", "FR", 2),
+    ("Lyon", "FR", 2),
+    ("Sydney", "AU", 4),
+    ("Melbourne", "AU", 4),
+    ("Sao Paulo", "BR", 5),
+    ("Mexico City", "MX", 5),
 ]
 ORDER_STATUSES = ["pending", "processing", "shipped", "delivered", "delivered", "delivered", "cancelled"]
 RETURN_REASONS = ["defective", "wrong_item", "not_as_described", "changed_mind", "other"]
@@ -151,14 +175,16 @@ def gen_customers(n: int = 5000) -> list[dict[str, Any]]:
             suffix += 1
             email = f"{first.lower()}.{last.lower()}{i}.{suffix}@example.com"
         used_emails.add(email)
+        city, country, region_id = rng.choice(LOCATIONS)
         customers.append({
             "id": i,
             "first_name": first,
             "last_name": last,
             "email": email,
             "phone": f"+1-{rng.randint(200,999)}-{rng.randint(100,999)}-{rng.randint(1000,9999)}",
-            "city": rng.choice(CITIES),
-            "country": rng.choice(COUNTRIES),
+            "city": city,
+            "country": country,
+            "region_id": region_id,
             "segment": rng.choice(SEGMENTS),
             "acquired_at": rand_date(),
             "is_active": rng.random() > 0.08,
@@ -177,6 +203,7 @@ def gen_orders_and_items(
     iid = 1
     active_cids = [c["id"] for c in customers if c["is_active"]]
     active_prods = [p for p in products if p["is_active"]]
+    customer_region = {c["id"]: c["region_id"] for c in customers}
 
     for _ in range(target):
         cid = rng.choice(active_cids)
@@ -212,13 +239,14 @@ def gen_orders_and_items(
         shipped_at = None
         delivered_at = None
         if status in ("shipped", "delivered"):
-            shipped_at = ordered_at + timedelta(hours=rng.uniform(24, 72))
+            shipped_at = min(ordered_at + timedelta(hours=rng.uniform(24, 72)), END)
         if status == "delivered":
-            delivered_at = shipped_at + timedelta(hours=rng.uniform(24, 168))  # type: ignore[operator]
+            delivered_at = min(shipped_at + timedelta(hours=rng.uniform(24, 168)), END)  # type: ignore[operator]
 
         orders.append({
             "id": oid,
             "customer_id": cid,
+            "region_id": customer_region[cid],
             "status": status,
             "channel": rng.choice(CHANNELS),
             "subtotal": subtotal,
@@ -263,7 +291,10 @@ def gen_returns(
             "qty": qty,
             "reason": rng.choice(RETURN_REASONS),
             "refund_amt": round(item["unit_price"] * qty * 0.9, 2),
-            "returned_at": order["delivered_at"] + timedelta(days=rng.randint(1, 30)),
+            "returned_at": min(
+                order["delivered_at"] + timedelta(days=rng.randint(1, 30)),
+                END,
+            ),
         })
         rid += 1
     return returns
@@ -288,7 +319,7 @@ def gen_tickets(
         resolved_at = None
         satisfaction = None
         if status in ("resolved", "closed"):
-            resolved_at = created_at + timedelta(hours=rng.uniform(1, 72))
+            resolved_at = min(created_at + timedelta(hours=rng.uniform(1, 72)), END)
             if status == "resolved":
                 satisfaction = rng.randint(2, 5)
             else:
@@ -346,9 +377,20 @@ def gen_employees(n: int = 120) -> list[dict[str, Any]]:
             "title": f"{dept} {titles_by_level[level]}",
             "level": level,
             "salary": round(rng.uniform(lo, hi), 2),
-            "hired_at": rand_date(lo=date(2010, 1, 1), hi=date(2024, 1, 1)),
+            "hired_at": rand_date(lo=date(2010, 1, 1), hi=REFERENCE_DATE),
+            "region_id": rng.choices([1, 2, 3, 4, 5], weights=[40, 20, 15, 15, 10], k=1)[0],
             "is_active": rng.random() > 0.1,
+            "manager_id": None,
         })
+
+    managers = [e for e in employees if e["level"] in {"mgr", "sr_mgr", "dir", "vp"}]
+    for employee in employees:
+        if employee["level"] == "vp":
+            continue
+        candidates = [manager for manager in managers if manager["id"] != employee["id"]]
+        if candidates:
+            employee["manager_id"] = rng.choice(candidates)["id"]
+
     return employees
 
 
@@ -360,6 +402,7 @@ def gen_employees(n: int = 120) -> list[dict[str, Any]]:
 def emit_truncate() -> str:
     return """
 -- Seed is idempotent: wipe in dependency order before re-inserting.
+TRUNCATE business.regions         RESTART IDENTITY CASCADE;
 TRUNCATE business.support_tickets RESTART IDENTITY CASCADE;
 TRUNCATE business.returns         RESTART IDENTITY CASCADE;
 TRUNCATE business.order_items     RESTART IDENTITY CASCADE;
@@ -368,6 +411,18 @@ TRUNCATE business.customers       RESTART IDENTITY CASCADE;
 TRUNCATE business.employees       RESTART IDENTITY CASCADE;
 TRUNCATE business.products        RESTART IDENTITY CASCADE;
 """
+
+
+def emit_regions() -> str:
+    rows = [
+        f"({region_id},{sql_str(name)},{sql_str(country)})"
+        for region_id, name, country in REGIONS
+    ]
+    return (
+        "INSERT INTO business.regions (id,name,country) VALUES\n"
+        + ",\n".join(rows)
+        + ";\n"
+    )
 
 
 def emit_products(products: list[dict[str, Any]]) -> str:
@@ -388,10 +443,14 @@ def emit_customers(customers: list[dict[str, Any]]) -> str:
         rows.append(
             f"({c['id']},{sql_str(c['first_name'])},{sql_str(c['last_name'])},"
             f"{sql_str(c['email'])},{sql_str(c['phone'])},"
-            f"{sql_str(c['city'])},{sql_str(c['country'])},{sql_str(c['segment'])},"
-            f"{sql_date(c['acquired_at'])},{sql_bool(c['is_active'])})"
+            f"{sql_str(c['city'])},{sql_str(c['country'])},{c['region_id']},"
+            f"{sql_str(c['segment'])},{sql_date(c['acquired_at'])},{sql_bool(c['is_active'])})"
         )
-    return "INSERT INTO business.customers (id,first_name,last_name,email,phone,city,country,segment,acquired_at,is_active) VALUES\n" + ",\n".join(rows) + ";\n"
+    return (
+        "INSERT INTO business.customers "
+        "(id,first_name,last_name,email,phone,city,country,region_id,segment,acquired_at,is_active) "
+        "VALUES\n" + ",\n".join(rows) + ";\n"
+    )
 
 
 def emit_employees(employees: list[dict[str, Any]]) -> str:
@@ -400,10 +459,15 @@ def emit_employees(employees: list[dict[str, Any]]) -> str:
         rows.append(
             f"({e['id']},{sql_str(e['first_name'])},{sql_str(e['last_name'])},"
             f"{sql_str(e['email'])},{sql_str(e['department'])},{sql_str(e['title'])},"
-            f"{sql_str(e['level'])},{sql_num(e['salary'])},{sql_date(e['hired_at'])},"
-            f"{sql_bool(e['is_active'])})"
+            f"{sql_str(e['level'])},{sql_num(e['salary'])},{e['region_id']},"
+            f"{e['manager_id'] if e['manager_id'] is not None else 'NULL'},"
+            f"{sql_date(e['hired_at'])},{sql_bool(e['is_active'])})"
         )
-    return "INSERT INTO business.employees (id,first_name,last_name,email,department,title,level,salary,hired_at,is_active) VALUES\n" + ",\n".join(rows) + ";\n"
+    return (
+        "INSERT INTO business.employees "
+        "(id,first_name,last_name,email,department,title,level,salary,region_id,manager_id,"
+        "hired_at,is_active) VALUES\n" + ",\n".join(rows) + ";\n"
+    )
 
 
 def emit_orders(orders: list[dict[str, Any]]) -> str:
@@ -415,13 +479,15 @@ def emit_orders(orders: list[dict[str, Any]]) -> str:
         rows = []
         for o in batch:
             rows.append(
-                f"({o['id']},{o['customer_id']},{sql_str(o['status'])},"
+                f"({o['id']},{o['customer_id']},{o['region_id']},{sql_str(o['status'])},"
                 f"{sql_str(o['channel'])},{sql_num(o['subtotal'])},"
                 f"{sql_num(o['discount'])},{sql_num(o['tax'])},{sql_num(o['total'])},"
                 f"'USD',{sql_ts(o['ordered_at'])},{sql_ts(o['shipped_at'])},{sql_ts(o['delivered_at'])})"
             )
         lines.append(
-            "INSERT INTO business.orders (id,customer_id,status,channel,subtotal,discount,tax,total,currency,ordered_at,shipped_at,delivered_at) VALUES\n"
+            "INSERT INTO business.orders "
+            "(id,customer_id,region_id,status,channel,subtotal,discount,tax,total,"
+            "currency,ordered_at,shipped_at,delivered_at) VALUES\n"
             + ",\n".join(rows)
             + ";\n"
         )
@@ -496,6 +562,7 @@ def emit_sequence_resets(
     employees: list[dict[str, Any]],
 ) -> str:
     return f"""
+SELECT setval(pg_get_serial_sequence('business.regions', 'id'), {len(REGIONS)});
 SELECT setval(pg_get_serial_sequence('business.products', 'id'), {max(p['id'] for p in products)});
 SELECT setval(pg_get_serial_sequence('business.customers', 'id'), {max(c['id'] for c in customers)});
 SELECT setval(pg_get_serial_sequence('business.orders', 'id'), {max(o['id'] for o in orders)});
@@ -518,6 +585,8 @@ def main() -> None:
     out.write("-- Generated by infra/seed/generate_business.py\n\n")
     out.write("BEGIN;\n\n")
     out.write(emit_truncate())
+    out.write("\n")
+    out.write(emit_regions())
     out.write("\n")
 
     products = gen_products(50)

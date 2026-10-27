@@ -2,6 +2,7 @@ import { ShieldCheck, UserCog, UsersRound } from 'lucide-react';
 
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
+import { SchemaCatalogEditor } from '../features/admin/schema-catalog-editor';
 import { useAuth } from '../features/auth/use-auth';
 
 export function AdminPage() {
@@ -16,7 +17,7 @@ export function AdminPage() {
             <Badge variant="verified">Admin only</Badge>
           </div>
           <p className="mt-1 max-w-2xl text-body-md text-ink-500">
-            Workspace administration for people, roles, and access.
+            Workspace administration for people, roles, access, and the data catalog.
           </p>
         </div>
         <Badge variant="neutral">Signed in as {user?.role}</Badge>
@@ -78,6 +79,8 @@ export function AdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      <SchemaCatalogEditor />
     </div>
   );
 }

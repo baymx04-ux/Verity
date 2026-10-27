@@ -7,8 +7,9 @@ AI_PYTHON := $(VENV)/bin/python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help env install up infra down clean ps logs build migrate seed \
-	test test-node test-ai test-integration lint typecheck format format-check check verify-roles audit
+.PHONY: help env install up infra down clean ps logs build migrate seed seed-business \
+	seed-all catalog-refresh test test-node test-ai test-integration lint typecheck format \
+	format-check check verify-roles audit
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -53,6 +54,15 @@ migrate: env ## Apply pending SQL migrations
 
 seed: ## Create demo users, groups, and the document corpus
 	POSTGRES_HOST=localhost REDIS_URL=redis://localhost:6379 MINIO_ENDPOINT=localhost npm run seed:demo
+
+seed-business: ## Load deterministic business data (24 months ending 2026-09-30)
+	python3 infra/seed/generate_business.py | \
+		$(COMPOSE) exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+
+catalog-refresh: ## Re-introspect business_ro views and embed the SQL schema catalog
+	$(COMPOSE) run --rm ai python -m app.sql.refresh
+
+seed-all: seed seed-business catalog-refresh ## Load all demo data and refresh the SQL catalog
 
 test: test-node test-ai ## Run all unit tests
 

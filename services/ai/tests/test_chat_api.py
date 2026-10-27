@@ -4,10 +4,12 @@ import json
 import time
 import uuid
 from collections.abc import AsyncIterator
+from typing import cast
 
 import pytest
 from app.core.config import Settings
 from app.llm.base import LLMDelta
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 TOKEN = "test-internal-token"
@@ -106,3 +108,37 @@ def test_chat_stream_returns_sse(chat_client: TestClient) -> None:
     assert "event: token" in text
     assert "event: sources" in text
     assert "event: done" in text
+
+
+def test_chat_stream_dispatches_sql_route(chat_client: TestClient) -> None:
+    payload = chat_payload()
+    payload["route"] = "sql"
+
+    async def fake_sql_stream(
+        request: object,
+    ) -> AsyncIterator[tuple[str, dict[str, object]]]:
+        yield "route", {"route": "sql"}
+        yield "token", {"text": "Answer from data."}
+        yield "sources", {"citations": []}
+        yield "done", {
+            "route": "sql",
+            "trace_id": "trace-sql",
+            "latency_ms": 12,
+            "answer_status": "answered",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+            "sql_outcome": {"outcome": "success"},
+        }
+
+    class FakeSqlService:
+        stream = staticmethod(fake_sql_stream)
+
+    cast(FastAPI, chat_client.app).state.sql_chat_service = FakeSqlService()
+
+    body = json.dumps(payload).encode()
+    headers = sign("POST", "/chat/stream", body)
+    response = chat_client.post("/chat/stream", content=body, headers=headers)
+
+    assert response.status_code == 200
+    assert 'data: {"route":"sql"}' in response.text
+    assert "Answer from data." in response.text
+    assert '"sql_outcome":{"outcome":"success"}' in response.text

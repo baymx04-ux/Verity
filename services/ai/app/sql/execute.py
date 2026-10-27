@@ -1,19 +1,18 @@
-"""SQL executor — runs validated SQL against the read-only business_ro pool.
+"""SQL executor — runs validated SQL against the read-only business_ro role.
 
-Design:
-  - Uses a separate psycopg connection with the verity_sql_ro role.
-  - The role already has default_transaction_read_only=on and statement_timeout=5s
-    set in postgres init; we add an explicit transaction-level guard as defence in depth.
-  - Returns up to HARD_LIMIT rows; flags truncation if result was capped.
-  - Never re-raises; returns an ExecutionError result instead.
+The SQL role has ``default_transaction_read_only=on`` and a five-second
+statement timeout. This module adds an explicit read-only transaction and a
+transaction-local timeout as defence in depth, then trims the returned rows to
+the display cap while reporting whether more rows were available.
 """
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import logging
 import time
 from dataclasses import dataclass, field
-from urllib.parse import quote
 
 import psycopg
 from psycopg.rows import dict_row
@@ -21,10 +20,6 @@ from psycopg.rows import dict_row
 from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
-
-# Row caps (plan D11)
-DISPLAY_LIMIT = 200
-HARD_LIMIT = 1000
 
 
 @dataclass
@@ -36,123 +31,96 @@ class ExecutionResult:
     truncated: bool = False
     execution_ms: int = 0
     error: str = ""
-    error_code: str = ""  # e.g. "timeout", "syntax", "permission", "unknown"
-
-
-def _build_ro_dsn(settings: Settings) -> str:
-    user = quote(settings.sql_ro_user, safe="")
-    password = quote(settings.sql_ro_password.get_secret_value(), safe="")
-    return (
-        f"postgresql://{user}:{password}"
-        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-    )
+    error_code: str = ""  # e.g. "timeout", "permission", "read_only_violation"
 
 
 async def execute(sql: str, settings: Settings) -> ExecutionResult:
-    """Execute *sql* (already validated + LIMIT-injected) and return rows."""
+    """Execute *sql* (already validated and LIMIT-bounded) and return rows."""
     started = time.perf_counter()
-    dsn = _build_ro_dsn(settings)
 
     try:
-        async with await psycopg.AsyncConnection.connect(dsn, row_factory=dict_row) as conn:
-            # Defence-in-depth: explicit read-only transaction even though the role
-            # has default_transaction_read_only=on.
+        async with await psycopg.AsyncConnection.connect(
+            settings.sql_database_url, row_factory=dict_row
+        ) as conn:
             async with conn.transaction():
                 await conn.execute("SET TRANSACTION READ ONLY")
+                await conn.execute(
+                    f"SET LOCAL statement_timeout = '{max(1, settings.sql_timeout_ms)}ms'"
+                )
                 async with conn.cursor() as cur:
                     await cur.execute(sql)
-                    # Fetch up to HARD_LIMIT+1 to detect truncation
-                    raw = await cur.fetchmany(HARD_LIMIT + 1)
-                    truncated = len(raw) > HARD_LIMIT
-                    rows = raw[:HARD_LIMIT]
-                    # Convert to plain dicts with string-safe values
-                    rows_clean = [_clean_row(r) for r in rows]
-                    columns = [desc.name for desc in (cur.description or [])]
-
+                    raw_rows = await cur.fetchmany(settings.sql_hard_limit + 1)
+                    columns = [description.name for description in (cur.description or [])]
     except psycopg.errors.QueryCanceled:
-        ms = int((time.perf_counter() - started) * 1000)
-        logger.warning("sql_executor timeout sql_snippet=%s...", sql[:120])
-        return ExecutionResult(
-            ok=False,
-            execution_ms=ms,
-            error="Query exceeded the 5-second time limit.",
-            error_code="timeout",
-        )
+        return _failure(started, "Query exceeded the statement time limit.", "timeout")
     except psycopg.errors.InsufficientPrivilege as exc:
-        ms = int((time.perf_counter() - started) * 1000)
         logger.warning("sql_executor permission error: %s", exc)
-        return ExecutionResult(
-            ok=False,
-            execution_ms=ms,
-            error="Permission denied. The query references disallowed objects.",
-            error_code="permission",
+        return _failure(
+            started,
+            "Permission denied. The query references disallowed objects.",
+            "permission",
         )
     except psycopg.errors.ReadOnlySqlTransaction as exc:
-        ms = int((time.perf_counter() - started) * 1000)
-        logger.warning("sql_executor read_only violation: %s", exc)
-        return ExecutionResult(
-            ok=False,
-            execution_ms=ms,
-            error="Write operations are not permitted.",
-            error_code="read_only_violation",
-        )
+        logger.warning("sql_executor read-only violation: %s", exc)
+        return _failure(started, "Write operations are not permitted.", "read_only_violation")
     except psycopg.Error as exc:
-        ms = int((time.perf_counter() - started) * 1000)
         logger.warning("sql_executor postgres error: %s", exc)
-        return ExecutionResult(
-            ok=False,
-            execution_ms=ms,
-            error=f"Database error: {_sanitize_pg_error(str(exc))}",
-            error_code="postgres_error",
+        return _failure(
+            started,
+            f"Database error: {_sanitize_pg_error(str(exc))}",
+            "postgres_error",
         )
     except Exception as exc:
-        ms = int((time.perf_counter() - started) * 1000)
         logger.exception("sql_executor unexpected error: %s", exc)
-        return ExecutionResult(
-            ok=False,
-            execution_ms=ms,
-            error="An unexpected error occurred while running the query.",
-            error_code="unknown",
+        return _failure(
+            started,
+            "An unexpected error occurred while running the query.",
+            "unknown",
         )
 
-    ms = int((time.perf_counter() - started) * 1000)
+    rows = [_clean_row(row) for row in raw_rows[: settings.sql_display_limit]]
+    truncated = len(raw_rows) > settings.sql_display_limit
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
     logger.info(
         "sql_executor ok rows=%d truncated=%s execution_ms=%d",
-        len(rows_clean),
+        len(rows),
         truncated,
-        ms,
+        elapsed_ms,
     )
     return ExecutionResult(
         ok=True,
-        rows=rows_clean,
+        rows=rows,
         columns=columns,
-        row_count=len(rows_clean),
+        row_count=len(rows),
         truncated=truncated,
-        execution_ms=ms,
+        execution_ms=elapsed_ms,
+    )
+
+
+def _failure(started: float, message: str, code: str) -> ExecutionResult:
+    return ExecutionResult(
+        ok=False,
+        execution_ms=int((time.perf_counter() - started) * 1000),
+        error=message,
+        error_code=code,
     )
 
 
 def _clean_row(row: dict[str, object]) -> dict[str, object]:
-    """Convert non-JSON-serializable types to safe representations."""
-    import datetime
-    import decimal
-
+    """Convert values that psycopg's JSON encoder cannot represent."""
     clean: dict[str, object] = {}
-    for k, v in row.items():
-        if v is None:
-            clean[k] = None
-        elif isinstance(v, (int, float, bool, str)):
-            clean[k] = v
-        elif isinstance(v, decimal.Decimal):
-            clean[k] = float(v)
-        elif isinstance(v, (datetime.datetime, datetime.date)):
-            clean[k] = v.isoformat()
+    for key, value in row.items():
+        if value is None or isinstance(value, int | float | bool | str):
+            clean[key] = value
+        elif isinstance(value, decimal.Decimal):
+            clean[key] = float(value)
+        elif isinstance(value, datetime.date | datetime.datetime):
+            clean[key] = value.isoformat()
         else:
-            clean[k] = str(v)
+            clean[key] = str(value)
     return clean
 
 
-def _sanitize_pg_error(msg: str) -> str:
-    """Strip potentially sensitive internal details from PG error messages."""
-    # Keep only the first line (the error summary); strip DETAIL/HINT lines.
-    return msg.split("\n")[0][:300]
+def _sanitize_pg_error(message: str) -> str:
+    """Keep only the first line of a PostgreSQL error message."""
+    return message.split("\n")[0][:300]

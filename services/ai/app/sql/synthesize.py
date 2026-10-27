@@ -1,9 +1,8 @@
-"""SQL answer synthesizer — generates a prose answer from query results.
+"""SQL answer synthesizer — turns query results into a grounded prose answer.
 
-Takes the validated SQL, its result rows, and the original question, and
-streams a natural-language answer. Also performs a numeric post-check:
-if the answer contains numbers that don't match the result data, it flags
-the discrepancy to the trace rather than blocking the response (plan §8).
+The model is given only the bounded result preview and is explicitly told not to
+invent numbers. A conservative numeric post-check records suspicious values in
+metadata for review; it never silently rewrites the answer.
 """
 
 from __future__ import annotations
@@ -19,18 +18,17 @@ from app.llm.base import LLMClient
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
-You are a data analyst assistant. You will be given:
-1. A user question about business data.
-2. A SQL query that was executed against the database.
-3. The query result (as JSON rows).
+You are a data analyst assistant for Verity. You receive a user question, the
+SQL that ran, and a bounded result preview.
 
-Your task:
-- Write a concise, accurate answer to the question based ONLY on the provided data.
-- If the result is empty, say so clearly.
-- Round numbers sensibly; use commas for thousands.
-- Do NOT fabricate data not present in the result.
-- Do NOT include the SQL in your answer unless the user asked for it.
-- Keep the answer under 200 words.
+Rules:
+- Answer only from the provided result.
+- State the key answer first, then a short supporting detail.
+- If the result is empty, say that no matching rows were found.
+- Use commas for thousands and round money to two decimals.
+- Do not claim that data exists outside the preview or invent figures.
+- Do not include the SQL unless the user explicitly asked for it.
+- Keep the answer under 160 words.
 """
 
 _USER_TEMPLATE = """\
@@ -57,12 +55,11 @@ async def synthesize(
     max_tokens: int = 600,
 ) -> AsyncIterator[str]:
     """Stream prose answer tokens for the given SQL result."""
-
-    # Build a compact result preview (first 20 rows max for the synthesis prompt)
     preview_rows = rows[:20]
     result_json = json.dumps(preview_rows, indent=2, default=str)
-    truncation_note = f"; showing first {len(preview_rows)} of {len(rows)}" if truncated else ""
-
+    truncation_note = (
+        f"; previewing {len(preview_rows)} of {len(rows)} displayed rows" if truncated else ""
+    )
     user_content = _USER_TEMPLATE.format(
         question=question,
         sql=sql,
@@ -71,9 +68,6 @@ async def synthesize(
         result_json=result_json,
     )
 
-    numeric_values = _extract_numbers_from_rows(rows)
-    answer_parts: list[str] = []
-
     async for delta in llm.stream(
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_content}],
@@ -81,37 +75,45 @@ async def synthesize(
         max_output_tokens=max_tokens,
     ):
         if delta.text:
-            answer_parts.append(delta.text)
             yield delta.text
 
-    answer = "".join(answer_parts)
-    _numeric_post_check(answer, numeric_values)
 
+def numeric_post_check(answer: str, rows: list[dict[str, Any]]) -> dict[str, object]:
+    """Return a transparent numeric-consistency result for the answer.
 
-def _extract_numbers_from_rows(rows: list[dict[str, Any]]) -> set[float]:
-    nums: set[float] = set()
-    for row in rows:
-        for v in row.values():
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                nums.add(float(v))
-    return nums
+    Large numbers in prose are compared with every numeric cell in the result.
+    Years and percentages are ignored to avoid false positives. A flagged
+    answer is still shown; the metadata tells the UI/reviewer what happened.
+    """
+    data_numbers = extract_numbers(rows)
+    if not data_numbers:
+        return {"status": "skipped", "unmatched": []}
 
-
-def _numeric_post_check(answer: str, data_nums: set[float]) -> None:
-    """Flag numbers in the answer that are suspiciously absent from the data."""
-    if not data_nums:
-        return
-
-    # Extract numbers mentioned in the answer
-    answer_nums = {float(m.replace(",", "")) for m in re.findall(r"[\d,]+\.?\d*", answer)}
-
-    # Check if large numbers in the answer are completely absent from data
-    suspicious = {
-        n for n in answer_nums
-        if n > 100 and not any(abs(n - d) / max(abs(d), 1) < 0.05 for d in data_nums)
+    answer_numbers = {
+        float(match.replace(",", ""))
+        for match in re.findall(r"\d[\d,]*\.?\d*", answer)
+        if match
     }
-    if suspicious:
-        logger.warning(
-            "sql_synthesize numeric_post_check: answer contains numbers not in result data: %s",
-            suspicious,
+    unmatched = sorted(
+        number
+        for number in answer_numbers
+        if number >= 100
+        and not 1900 <= number <= 2100
+        and not any(
+            abs(number - candidate) <= max(0.5, abs(candidate) * 0.05)
+            for candidate in data_numbers
         )
+    )
+    if unmatched:
+        logger.warning("sql_synthesize numeric check flagged values: %s", unmatched)
+        return {"status": "flagged", "unmatched": unmatched[:10]}
+    return {"status": "passed", "unmatched": []}
+
+
+def extract_numbers(rows: list[dict[str, Any]]) -> set[float]:
+    numbers: set[float] = set()
+    for row in rows:
+        for value in row.values():
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                numbers.add(float(value))
+    return numbers

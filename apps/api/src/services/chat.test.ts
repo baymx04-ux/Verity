@@ -45,6 +45,19 @@ function insertAssistantId(sql: string, params: unknown[]) {
   return sql.includes('INSERT INTO app.messages') && sql.includes('metadata') && params.length > 8;
 }
 
+function sqlSseResponse() {
+  return new Response(
+    `event: conversation\ndata: {"conversation_id":"${conversationId}"}\n\n` +
+      'event: route\ndata: {"route":"sql"}\n\n' +
+      'event: status\ndata: {"stage":"executing","message":"Running a safe read-only query…"}\n\n' +
+      'event: sql\ndata: {"sql":"SELECT region_name, net_revenue FROM business_ro.v_revenue_daily LIMIT 5","columns":["region_name","net_revenue"],"rows":[{"region_name":"Europe","net_revenue":1250.5}],"row_count":1,"truncated":false,"execution_ms":7}\n\n' +
+      'event: token\ndata: {"text":"Europe led the quarter with 1,250.50 in net revenue."}\n\n' +
+      'event: sources\ndata: {"citations":[]}\n\n' +
+      'event: done\ndata: {"trace_id":"trace-sql","latency_ms":90,"time_to_first_token_ms":60,"low_confidence":false,"answer_status":"answered","usage":{"prompt_tokens":20,"completion_tokens":9},"sql_outcome":{"outcome":"success","row_count":1,"truncated":false}}\n\n',
+    { headers: { 'Content-Type': 'text/event-stream' } },
+  );
+}
+
 describe('ChatService streaming', () => {
   it('does not forward the upstream done event twice', async () => {
     const pool = {
@@ -82,7 +95,7 @@ describe('ChatService streaming', () => {
     const insert = vi
       .mocked(pool.query)
       .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
-    const metadata = JSON.parse(String(insert?.[1]?.[8])) as Record<string, unknown>;
+    const metadata = JSON.parse(String(insert?.[1]?.[10])) as Record<string, unknown>;
     expect(metadata['time_to_first_token_ms']).toBe(1420);
     expect(metadata['invalid_citation_count']).toBe(1);
   });
@@ -139,7 +152,7 @@ describe('ChatService streaming', () => {
       .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
     expect(insert).toBeDefined();
     expect(insert?.[1]?.[1]).toBe('Partial answer');
-    const metadata = JSON.parse(String(insert?.[1]?.[8])) as Record<string, unknown>;
+    const metadata = JSON.parse(String(insert?.[1]?.[10])) as Record<string, unknown>;
     expect(metadata['aborted']).toBe(true);
     expect(metadata['answer_status']).toBe('aborted');
   });
@@ -183,7 +196,7 @@ describe('ChatService streaming', () => {
     const insert = vi
       .mocked(pool.query)
       .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
-    const metadata = JSON.parse(String(insert?.[1]?.[8])) as Record<string, unknown>;
+    const metadata = JSON.parse(String(insert?.[1]?.[10])) as Record<string, unknown>;
     expect(metadata['answer_status']).toBe('error');
   });
 
@@ -242,5 +255,59 @@ describe('ChatService streaming', () => {
 
     const done = events.find(([event]) => event === 'done')?.[1] as Record<string, unknown>;
     expect(done['message_id']).toBe(assistantId);
+  });
+
+  it('forwards sql mode, persists the query/result, and relays sql metadata', async () => {
+    const captured: { payload?: AiChatStreamPayload } = {};
+    const ai = createAiClientStub({
+      chatStream: async (payload) => {
+        captured.payload = payload;
+        return sqlSseResponse();
+      },
+    });
+
+    const pool = {
+      query: vi.fn(async (sql: string, params: unknown[]) => {
+        if (sql.includes('FROM app.conversations'))
+          return { rows: [conversationRow()], rowCount: 1 };
+        if (insertAssistantId(sql, params)) {
+          return { rows: [{ id: assistantId }], rowCount: 1 };
+        }
+        if (sql.includes('INSERT INTO app.messages')) return { rows: [], rowCount: 1 };
+        if (sql.includes('FROM app.messages')) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 1 };
+      }),
+    } as unknown as Pool;
+
+    const service = new ChatService(pool, ai, logger);
+    const events: Array<[string, unknown]> = [];
+
+    await service.streamChat({
+      user,
+      conversationId,
+      question: 'Revenue by region last quarter?',
+      route: 'sql',
+      onEvent: (event, data) => events.push([event, data]),
+    });
+
+    expect(captured.payload?.route).toBe('sql');
+
+    const sqlEvent = events.find(([event]) => event === 'sql')?.[1] as Record<string, unknown>;
+    expect(sqlEvent['sql']).toContain('business_ro.v_revenue_daily');
+    expect(sqlEvent['row_count']).toBe(1);
+
+    const done = events.find(([event]) => event === 'done')?.[1] as Record<string, unknown>;
+    expect(done['route']).toBe('sql');
+    expect(done['sql_outcome']).toMatchObject({ outcome: 'success', row_count: 1 });
+
+    const insert = vi
+      .mocked(pool.query)
+      .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
+    expect(insert?.[1]?.[2]).toBe('sql');
+    expect(insert?.[1]?.[4]).toContain('business_ro.v_revenue_daily');
+    const preview = JSON.parse(String(insert?.[1]?.[5])) as Record<string, unknown>;
+    expect(preview['row_count']).toBe(1);
+    const metadata = JSON.parse(String(insert?.[1]?.[10])) as Record<string, unknown>;
+    expect(metadata['sql_outcome']).toMatchObject({ outcome: 'success' });
   });
 });

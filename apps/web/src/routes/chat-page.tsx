@@ -5,9 +5,12 @@ import {
   PanelRightOpen,
   RotateCcw,
   Sparkles,
+  Database,
+  FileText,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { SqlPanel } from '../components/sql/SqlPanel';
 import { Alert } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -19,8 +22,10 @@ import { Tooltip } from '../components/ui/tooltip';
 import { useAuth } from '../features/auth/use-auth';
 import {
   type ChatMessage,
+  type ChatRoute,
   type Citation,
   type Conversation,
+  type SqlResultPreview,
   deleteConversation,
   fetchConversations,
   fetchMessages,
@@ -33,11 +38,11 @@ import { ConversationRail } from '../features/chat/conversation-rail';
 import { MessageItem } from '../features/chat/message-item';
 import { getDocumentDownloadUrl } from '../features/documents/document-api';
 
-const DEMO_PROMPTS = [
-  'Summarise the employee annual leave policy',
-  'What are the return rules for damaged goods?',
-  'What are the fulfillment SLAs for standard shipping?',
-  'What remote work equipment expenses can be reimbursed?',
+const DEMO_PROMPTS: Array<{ text: string; mode: ChatRoute }> = [
+  { text: 'Summarise the employee annual leave policy', mode: 'documents' },
+  { text: 'What are the return rules for damaged goods?', mode: 'documents' },
+  { text: 'What was total revenue by region last quarter?', mode: 'sql' },
+  { text: 'Which product categories have the highest return rate?', mode: 'sql' },
 ];
 
 const STREAM_START = 'Starting answer search…';
@@ -74,12 +79,14 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [inputQuestion, setInputQuestion] = useState('');
+  const [mode, setMode] = useState<ChatRoute>('documents');
 
   // Streaming state
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
   const [streamingTokens, setStreamingTokens] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<Citation[]>([]);
+  const [streamingSql, setStreamingSql] = useState<SqlResultPreview | null>(null);
   const [streamError, setStreamError] = useState<StreamError | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamingTextRef = useRef('');
@@ -174,6 +181,7 @@ export function ChatPage() {
     setInputQuestion('');
     setStreamingTokens('');
     setStreamingCitations([]);
+    setStreamingSql(null);
     setStreamError(null);
     setSelectedCitationIndex(null);
     setSelectedMessageId(null);
@@ -232,6 +240,8 @@ export function ChatPage() {
       traceId?: string | null;
       latencyMs?: number | null;
       metadata?: ChatMessage['metadata'];
+      sqlQuery?: string | null;
+      sqlResultPreview?: SqlResultPreview | null;
     } = {},
   ) => {
     const assistantMessage: ChatMessage = {
@@ -244,6 +254,8 @@ export function ChatPage() {
       trace_id: options.traceId ?? null,
       latency_ms: options.latencyMs ?? null,
       metadata: options.metadata ?? {},
+      ...(options.sqlQuery ? { sql_query: options.sqlQuery } : {}),
+      ...(options.sqlResultPreview ? { sql_result_preview: options.sqlResultPreview } : {}),
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, assistantMessage]);
@@ -253,12 +265,14 @@ export function ChatPage() {
     question?: string;
     regenerate?: boolean;
     conversationId?: string | null;
+    route?: ChatRoute;
   }) => {
     if (isStreaming) return;
 
     const regenerate = options.regenerate === true;
     const question = options.question?.trim();
     const conversationId = options.conversationId ?? activeConversationId;
+    const route = options.route ?? mode;
     if (!regenerate && !question) return;
 
     setStreamError(null);
@@ -266,6 +280,7 @@ export function ChatPage() {
     setStreamingStatus(regenerate ? 'Regenerating answer…' : STREAM_START);
     setStreamingTokens('');
     setStreamingCitations([]);
+    setStreamingSql(null);
     streamingTextRef.current = '';
 
     const controller = new AbortController();
@@ -273,7 +288,11 @@ export function ChatPage() {
 
     let finalText = '';
     let finalCitations: Citation[] = [];
-    let detectedRoute: string | null = regenerate ? 'documents' : null;
+    // The stream callbacks mutate this object after the synchronous setup.
+    // Using an object (rather than a local that TypeScript narrows to null)
+    // keeps the SQL result visible to the finally block.
+    const sqlState: { value: SqlResultPreview | null } = { value: null };
+    let detectedRoute: string | null = regenerate ? route : null;
     let streamFailure: StreamError | null = null;
     let targetConversationId = conversationId;
 
@@ -295,6 +314,7 @@ export function ChatPage() {
         ...(conversationId ? { conversationId } : {}),
         ...(question ? { question } : {}),
         ...(regenerate ? { regenerate: true } : {}),
+        route,
         signal: controller.signal,
         handlers: {
           onConversation: (conversationIdFromStream) => {
@@ -318,6 +338,10 @@ export function ChatPage() {
             finalCitations = citations;
             setStreamingCitations(citations);
           },
+          onSql: (result) => {
+            sqlState.value = result;
+            setStreamingSql(result);
+          },
           onDone: (data) => {
             if (data.conversation_id) {
               targetConversationId = data.conversation_id;
@@ -328,11 +352,12 @@ export function ChatPage() {
 
             const resolvedConversationId =
               data.conversation_id || targetConversationId || conversationId || '';
+            const sql = sqlState.value;
             if (finalText.trim()) {
               appendAssistantMessage(resolvedConversationId, finalText, {
                 ...(data.message_id ? { id: data.message_id } : {}),
                 citations: finalCitations,
-                route: detectedRoute ?? data.route ?? 'documents',
+                route: detectedRoute ?? data.route ?? route,
                 traceId: data.trace_id ?? null,
                 latencyMs: data.latency_ms ?? null,
                 metadata: {
@@ -342,8 +367,13 @@ export function ChatPage() {
                   ...(data.citation_count !== undefined
                     ? { citation_count: data.citation_count }
                     : {}),
+                  ...(data.sql_outcome ? { sql_outcome: data.sql_outcome } : {}),
                   aborted: false,
                 },
+                ...(sql?.sql || sql?.query
+                  ? { sqlQuery: sql.sql ?? sql.query ?? null }
+                  : {}),
+                ...(sql ? { sqlResultPreview: sql } : {}),
               });
             }
             void loadConversations();
@@ -370,6 +400,7 @@ export function ChatPage() {
       const aborted = controller.signal.aborted;
       const stillInConversation =
         !targetConversationId || activeConversationRef.current === targetConversationId;
+      const sql = sqlState.value;
 
       // Keep a stopped/failed partial answer visible. The gateway persists the
       // same partial text with an `aborted`/`error` status, so a later reload
@@ -384,23 +415,30 @@ export function ChatPage() {
             low_confidence: false,
             ...(streamFailure ? { error_code: streamFailure.code } : {}),
           },
+          ...(sql?.sql || sql?.query
+            ? { sqlQuery: sql.sql ?? sql.query ?? null }
+            : {}),
+          ...(sql ? { sqlResultPreview: sql } : {}),
         });
       }
 
       setIsStreaming(false);
       setStreamingTokens('');
+      setStreamingSql(null);
       setStreamingStatus(null);
       streamingTextRef.current = '';
       abortControllerRef.current = null;
     }
   };
 
-  const handleSend = (overrideText?: string) => {
+  const handleSend = (overrideText?: string, overrideMode?: ChatRoute) => {
     const questionToSend = (overrideText || inputQuestion).trim();
     if (!questionToSend || isStreaming) return;
 
+    const route = overrideMode ?? mode;
+    if (overrideMode) setMode(overrideMode);
     setInputQuestion('');
-    void runStream({ question: questionToSend });
+    void runStream({ question: questionToSend, route });
   };
 
   const handleStopStreaming = () => {
@@ -414,8 +452,10 @@ export function ChatPage() {
     const last = messages[lastIndex];
     if (last?.role !== 'assistant') return;
 
+    const route: ChatRoute = last.route === 'sql' ? 'sql' : 'documents';
+    setMode(route);
     setMessages((prev) => prev.slice(0, -1));
-    void runStream({ regenerate: true, conversationId: activeConversationId });
+    void runStream({ regenerate: true, conversationId: activeConversationId, route });
   };
 
   const handleRetry = () => {
@@ -427,14 +467,18 @@ export function ChatPage() {
       if (last?.role === 'user') {
         // A failed turn already stored the question; regenerate without adding
         // a duplicate user message.
-        void runStream({ regenerate: true, conversationId: activeConversationId });
+        void runStream({ regenerate: true, conversationId: activeConversationId, route: mode });
         return;
       }
     }
 
     const lastUser = [...messages].reverse().find((message) => message.role === 'user');
     if (lastUser) {
-      void runStream({ question: lastUser.content, conversationId: activeConversationId });
+      void runStream({
+        question: lastUser.content,
+        conversationId: activeConversationId,
+        route: mode,
+      });
     }
   };
 
@@ -486,10 +530,15 @@ export function ChatPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate font-display text-display-md text-ink-900">Ask Verity</h1>
                 <Badge variant="verified">Grounded answers</Badge>
-                <Badge variant="info">Documents</Badge>
+                <Badge variant={mode === 'sql' ? 'live' : 'info'}>
+                  {mode === 'sql' ? 'Data mode' : 'Documents mode'}
+                </Badge>
               </div>
               <p className="mt-0.5 truncate text-body-sm text-ink-500">
-                {activeConversationTitle} · answers cite accessible documents
+                {activeConversationTitle} ·{' '}
+                {mode === 'sql'
+                  ? 'answers include the generated SQL and result table'
+                  : 'answers cite accessible documents'}
               </p>
             </div>
 
@@ -550,7 +599,7 @@ export function ChatPage() {
                     <EmptyState
                       icon={<Sparkles aria-hidden="true" />}
                       title="Your first answer starts here"
-                      description="Ask a question about the documents you can access. Answers stream with inline citations and an evidence drawer you can inspect."
+                      description="Ask a document question for cited answers, or switch to Data mode to query the demo company database with visible SQL and result tables."
                       action={
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           <Badge variant="verified">Grounded answers</Badge>
@@ -567,16 +616,23 @@ export function ChatPage() {
                       <div className="grid gap-2 sm:grid-cols-2">
                         {DEMO_PROMPTS.map((prompt) => (
                           <button
-                            key={prompt}
+                            key={prompt.text}
                             type="button"
-                            onClick={() => handleSend(prompt)}
+                            onClick={() => handleSend(prompt.text, prompt.mode)}
                             className="flex items-start gap-2.5 rounded-lg border border-slate-200/90 bg-white p-3 text-left text-body-sm text-slate-700 shadow-xs transition-colors hover:border-sky-300 hover:bg-sky-50/40 hover:text-sky-900"
                           >
-                            <FileSearch
-                              aria-hidden="true"
-                              className="mt-0.5 size-4 shrink-0 text-sky-600"
-                            />
-                            <span className="line-clamp-2">{prompt}</span>
+                            {prompt.mode === 'sql' ? (
+                              <Database
+                                aria-hidden="true"
+                                className="mt-0.5 size-4 shrink-0 text-emerald-600"
+                              />
+                            ) : (
+                              <FileText
+                                aria-hidden="true"
+                                className="mt-0.5 size-4 shrink-0 text-sky-600"
+                              />
+                            )}
+                            <span className="line-clamp-2">{prompt.text}</span>
                           </button>
                         ))}
                       </div>
@@ -630,6 +686,19 @@ export function ChatPage() {
                           <Badge variant="live">Generating…</Badge>
                         </header>
 
+                        {streamingSql ? (
+                          <SqlPanel
+                            result={{
+                              sql: streamingSql.sql ?? streamingSql.query ?? '',
+                              columns: streamingSql.columns,
+                              rows: streamingSql.rows,
+                              row_count: streamingSql.row_count,
+                              truncated: streamingSql.truncated,
+                              execution_ms: streamingSql.execution_ms ?? 0,
+                            }}
+                          />
+                        ) : null}
+
                         <div className="mt-3">
                           {streamingTokens ? (
                             <div className="whitespace-pre-wrap font-sans text-body-md leading-relaxed text-slate-800">
@@ -638,8 +707,15 @@ export function ChatPage() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 py-3 text-body-sm text-ink-500">
-                              <Spinner label="Searching documents…" />
-                              <span>{streamingStatus || 'Searching accessible documents…'}</span>
+                              <Spinner
+                                label={mode === 'sql' ? 'Querying data…' : 'Searching documents…'}
+                              />
+                              <span>
+                                {streamingStatus ||
+                                  (mode === 'sql'
+                                    ? 'Preparing a safe read-only query…'
+                                    : 'Searching accessible documents…')}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -670,6 +746,8 @@ export function ChatPage() {
                 onStop={handleStopStreaming}
                 isStreaming={isStreaming}
                 disabled={loadingHistory}
+                mode={mode}
+                onModeChange={setMode}
               />
             </div>
 
