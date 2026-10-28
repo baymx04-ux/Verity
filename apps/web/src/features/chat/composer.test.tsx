@@ -41,6 +41,18 @@ describe('Composer answer modes', () => {
     expect(screen.getByRole('button', { name: 'Data' })).toBeDisabled();
   });
 
+  it('describes auto routing and switches modes', async () => {
+    const { props } = renderComposer({ mode: 'auto' });
+
+    const auto = screen.getByRole('button', { name: 'Auto' });
+    expect(auto).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByPlaceholderText(/documents or company data/i)).toBeInTheDocument();
+    expect(screen.getByText(/Auto picks documents, data, or both/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Documents' }));
+    expect(props.onModeChange).toHaveBeenCalledWith('documents');
+  });
+
   it('submits with Enter but keeps Shift+Enter for a new line', async () => {
     const { props } = renderComposer({ question: 'Revenue by region?' });
 

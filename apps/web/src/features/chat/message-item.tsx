@@ -155,6 +155,7 @@ export function MessageItem({
   const isAborted = metadata.answer_status === 'aborted' || metadata.aborted === true;
   const isError = metadata.answer_status === 'error';
   const isClarification = metadata.answer_status === 'clarification';
+  const isOutOfScope = metadata.answer_status === 'out_of_scope';
   const sqlResult = toSqlResult(message.sql_query, message.sql_result_preview);
 
   const answerLabel = isAborted
@@ -163,13 +164,33 @@ export function MessageItem({
       ? 'Generation failed'
       : isClarification
         ? 'Clarification needed'
-        : isRefusal
-          ? 'Insufficient evidence'
-          : message.route === 'sql'
-            ? 'Data answer'
-            : 'Grounded answer';
+        : isOutOfScope
+          ? 'Out of scope'
+          : isRefusal
+            ? 'Insufficient evidence'
+            : message.route === 'sql'
+              ? 'Data answer'
+              : message.route === 'hybrid'
+                ? 'Combined answer'
+                : 'Grounded answer';
   const routeLabel =
-    message.route === 'documents' ? 'Documents' : message.route === 'sql' ? 'Data' : message.route;
+    message.route === 'documents'
+      ? 'Documents'
+      : message.route === 'sql'
+        ? 'Data'
+        : message.route === 'hybrid'
+          ? 'Docs + data'
+          : message.route === 'out_of_scope'
+            ? 'Out of scope'
+            : message.route;
+  const routeBadge =
+    message.route === 'documents'
+      ? 'info'
+      : message.route === 'sql'
+        ? 'live'
+        : message.route === 'hybrid'
+          ? 'analyst'
+          : 'warning';
 
   return (
     <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs sm:p-5">
@@ -192,11 +213,7 @@ export function MessageItem({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {message.route && (
-            <Badge variant={message.route === 'documents' ? 'info' : 'live'}>
-              {routeLabel}
-            </Badge>
-          )}
+          {message.route && <Badge variant={routeBadge}>{routeLabel}</Badge>}
           {message.latency_ms && (
             <span className="hidden items-center gap-1 text-[11px] font-mono text-ink-400 sm:inline-flex">
               <Clock className="size-3" aria-hidden="true" />

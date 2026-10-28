@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     internal_service_token: SecretStr = SecretStr("")
 
     llm_provider: str = "google"
-    llm_model: str = "gemini-2.5-flash"
+    llm_model: str = "gemini-3.6-flash"
     llm_temperature: float = 0.1
     llm_max_output_tokens: int = 1200
     google_api_key: SecretStr = SecretStr("")
@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     rerank_model: str = "rerank-v3.5"
     cohere_api_key: SecretStr = SecretStr("")
     chat_history_limit: int = 20
+
+    router_enabled: bool = True
+    router_model: str = ""
+    router_confidence_threshold: float = 0.7
+    router_max_output_tokens: int = 160
 
     chunk_tokens: int = 650
     chunk_overlap: int = 100

@@ -22,6 +22,7 @@ import { Tooltip } from '../components/ui/tooltip';
 import { useAuth } from '../features/auth/use-auth';
 import {
   type ChatMessage,
+  type ChatMode,
   type ChatRoute,
   type Citation,
   type Conversation,
@@ -38,12 +39,30 @@ import { ConversationRail } from '../features/chat/conversation-rail';
 import { MessageItem } from '../features/chat/message-item';
 import { getDocumentDownloadUrl } from '../features/documents/document-api';
 
-const DEMO_PROMPTS: Array<{ text: string; mode: ChatRoute }> = [
-  { text: 'Summarise the employee annual leave policy', mode: 'documents' },
-  { text: 'What are the return rules for damaged goods?', mode: 'documents' },
-  { text: 'What was total revenue by region last quarter?', mode: 'sql' },
-  { text: 'Which product categories have the highest return rate?', mode: 'sql' },
+const DEMO_PROMPTS: Array<{ text: string; mode: ChatMode }> = [
+  { text: 'Summarise the employee annual leave policy', mode: 'auto' },
+  { text: 'What was total revenue by region last quarter?', mode: 'auto' },
+  { text: 'Is our return rate within the policy target?', mode: 'auto' },
+  { text: 'Which product categories have the highest return rate?', mode: 'auto' },
 ];
+
+const MODE_LABEL: Record<ChatMode, string> = {
+  auto: 'Auto mode',
+  documents: 'Documents mode',
+  sql: 'Data mode',
+};
+
+const MODE_BADGE: Record<ChatMode, 'analyst' | 'info' | 'live'> = {
+  auto: 'analyst',
+  documents: 'info',
+  sql: 'live',
+};
+
+const MODE_HINT: Record<ChatMode, string> = {
+  auto: 'questions are routed to documents, data, or both',
+  documents: 'answers cite accessible documents',
+  sql: 'answers include the generated SQL and result table',
+};
 
 const STREAM_START = 'Starting answer search…';
 
@@ -79,7 +98,7 @@ export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [inputQuestion, setInputQuestion] = useState('');
-  const [mode, setMode] = useState<ChatRoute>('documents');
+  const [mode, setMode] = useState<ChatMode>('auto');
 
   // Streaming state
   const [isStreaming, setIsStreaming] = useState(false);
@@ -368,11 +387,10 @@ export function ChatPage() {
                     ? { citation_count: data.citation_count }
                     : {}),
                   ...(data.sql_outcome ? { sql_outcome: data.sql_outcome } : {}),
+                  ...(data.router ? { router: data.router } : {}),
                   aborted: false,
                 },
-                ...(sql?.sql || sql?.query
-                  ? { sqlQuery: sql.sql ?? sql.query ?? null }
-                  : {}),
+                ...(sql?.sql || sql?.query ? { sqlQuery: sql.sql ?? sql.query ?? null } : {}),
                 ...(sql ? { sqlResultPreview: sql } : {}),
               });
             }
@@ -415,9 +433,7 @@ export function ChatPage() {
             low_confidence: false,
             ...(streamFailure ? { error_code: streamFailure.code } : {}),
           },
-          ...(sql?.sql || sql?.query
-            ? { sqlQuery: sql.sql ?? sql.query ?? null }
-            : {}),
+          ...(sql?.sql || sql?.query ? { sqlQuery: sql.sql ?? sql.query ?? null } : {}),
           ...(sql ? { sqlResultPreview: sql } : {}),
         });
       }
@@ -431,7 +447,7 @@ export function ChatPage() {
     }
   };
 
-  const handleSend = (overrideText?: string, overrideMode?: ChatRoute) => {
+  const handleSend = (overrideText?: string, overrideMode?: ChatMode) => {
     const questionToSend = (overrideText || inputQuestion).trim();
     if (!questionToSend || isStreaming) return;
 
@@ -452,7 +468,8 @@ export function ChatPage() {
     const last = messages[lastIndex];
     if (last?.role !== 'assistant') return;
 
-    const route: ChatRoute = last.route === 'sql' ? 'sql' : 'documents';
+    const route: ChatMode =
+      last.route === 'sql' ? 'sql' : last.route === 'documents' ? 'documents' : 'auto';
     setMode(route);
     setMessages((prev) => prev.slice(0, -1));
     void runStream({ regenerate: true, conversationId: activeConversationId, route });
@@ -530,15 +547,10 @@ export function ChatPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate font-display text-display-md text-ink-900">Ask Verity</h1>
                 <Badge variant="verified">Grounded answers</Badge>
-                <Badge variant={mode === 'sql' ? 'live' : 'info'}>
-                  {mode === 'sql' ? 'Data mode' : 'Documents mode'}
-                </Badge>
+                <Badge variant={MODE_BADGE[mode]}>{MODE_LABEL[mode]}</Badge>
               </div>
               <p className="mt-0.5 truncate text-body-sm text-ink-500">
-                {activeConversationTitle} ·{' '}
-                {mode === 'sql'
-                  ? 'answers include the generated SQL and result table'
-                  : 'answers cite accessible documents'}
+                {activeConversationTitle} · {MODE_HINT[mode]}
               </p>
             </div>
 
@@ -599,7 +611,7 @@ export function ChatPage() {
                     <EmptyState
                       icon={<Sparkles aria-hidden="true" />}
                       title="Your first answer starts here"
-                      description="Ask a document question for cited answers, or switch to Data mode to query the demo company database with visible SQL and result tables."
+                      description="Ask anything: Verity routes document questions to cited passages, data questions to safe read-only SQL, and mixed questions to both."
                       action={
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           <Badge variant="verified">Grounded answers</Badge>
@@ -621,7 +633,8 @@ export function ChatPage() {
                             onClick={() => handleSend(prompt.text, prompt.mode)}
                             className="flex items-start gap-2.5 rounded-lg border border-slate-200/90 bg-white p-3 text-left text-body-sm text-slate-700 shadow-xs transition-colors hover:border-sky-300 hover:bg-sky-50/40 hover:text-sky-900"
                           >
-                            {prompt.mode === 'sql' ? (
+                            {prompt.text.includes('revenue') ||
+                            prompt.text.includes('return rate') ? (
                               <Database
                                 aria-hidden="true"
                                 className="mt-0.5 size-4 shrink-0 text-emerald-600"
@@ -708,13 +721,21 @@ export function ChatPage() {
                           ) : (
                             <div className="flex items-center gap-2 py-3 text-body-sm text-ink-500">
                               <Spinner
-                                label={mode === 'sql' ? 'Querying data…' : 'Searching documents…'}
+                                label={
+                                  mode === 'sql'
+                                    ? 'Querying data…'
+                                    : mode === 'auto'
+                                      ? 'Choosing the best source…'
+                                      : 'Searching documents…'
+                                }
                               />
                               <span>
                                 {streamingStatus ||
                                   (mode === 'sql'
                                     ? 'Preparing a safe read-only query…'
-                                    : 'Searching accessible documents…')}
+                                    : mode === 'auto'
+                                      ? 'Checking documents and company data…'
+                                      : 'Searching accessible documents…')}
                               </span>
                             </div>
                           )}

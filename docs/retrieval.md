@@ -1,9 +1,9 @@
 # Retrieval and Chat Pipeline
 
-**Status:** implemented in Phase 3. This document covers how a question becomes a
-grounded, cited answer: query rewriting, access filtering, hybrid retrieval,
-fusion, reranking, the confidence gate, citation validation, streaming, and abort
-handling.
+**Status:** implemented through Phase 5. This document covers how a question
+becomes a grounded, cited answer: intent routing, query rewriting, access
+filtering, hybrid retrieval, fusion, reranking, the confidence gate, hybrid
+document + SQL synthesis, citation validation, streaming, and abort handling.
 
 Behavioral source of truth: [`../plan.md`](../plan.md) §8. API and stream
 contract: [`api.md`](./api.md#chat-and-sse). Architecture:
@@ -219,24 +219,57 @@ question is not duplicated.
 These map to AI-service `Settings` fields. `.env.example` includes the common
 ones; the remainder use the defaults shown.
 
-| Setting                 | Default                | Purpose                                         |
-| ----------------------- | ---------------------- | ----------------------------------------------- |
-| `LLM_MODEL`             | `gemini-2.5-flash`     | Answer and rewrite model                        |
-| `LLM_TEMPERATURE`       | `0.1`                  | Generation temperature                          |
-| `LLM_MAX_OUTPUT_TOKENS` | `1200`                 | Answer length cap                               |
-| `EMBEDDING_MODEL`       | `gemini-embedding-001` | Query and chunk embeddings                      |
-| `RETRIEVE_TOP_K`        | `30`                   | Results per retrieval arm                       |
-| `RERANK_CANDIDATES`     | `20`                   | Fused chunks passed to the reranker             |
-| `RERANK_TOP_N`          | `6`                    | Chunks kept after reranking                     |
-| `MIN_RERANK_SCORE`      | `0.25`                 | Confidence-gate threshold                       |
-| `RERANKER`              | `none`                 | `none`, `local`, or `cohere`                    |
-| `COHERE_API_KEY`        | empty                  | Required for `cohere`                           |
-| `CHAT_HISTORY_LIMIT`    | `20`                   | Turns loaded for rewrite and generation context |
+| Setting                       | Default                | Purpose                                         |
+| ----------------------------- | ---------------------- | ----------------------------------------------- |
+| `LLM_MODEL`                   | `gemini-3.6-flash`     | Answer and rewrite model                        |
+| `LLM_TEMPERATURE`             | `0.1`                  | Generation temperature                          |
+| `LLM_MAX_OUTPUT_TOKENS`       | `1200`                 | Answer length cap                               |
+| `EMBEDDING_MODEL`             | `gemini-embedding-001` | Query and chunk embeddings                      |
+| `RETRIEVE_TOP_K`              | `30`                   | Results per retrieval arm                       |
+| `RERANK_CANDIDATES`           | `20`                   | Fused chunks passed to the reranker             |
+| `RERANK_TOP_N`                | `6`                    | Chunks kept after reranking                     |
+| `MIN_RERANK_SCORE`            | `0.25`                 | Confidence-gate threshold                       |
+| `RERANKER`                    | `none`                 | `none`, `local`, or `cohere`                    |
+| `COHERE_API_KEY`              | empty                  | Required for `cohere`                           |
+| `CHAT_HISTORY_LIMIT`          | `20`                   | Turns loaded for rewrite and generation context |
+| `ROUTER_ENABLED`              | `true`                 | Apply automatic intent routing                  |
+| `ROUTER_MODEL`                | empty                  | Router model; empty reuses `LLM_MODEL`          |
+| `ROUTER_CONFIDENCE_THRESHOLD` | `0.7`                  | Below this, use the hybrid route (D9)           |
+| `ROUTER_MAX_OUTPUT_TOKENS`    | `160`                  | Classifier output cap                           |
 
 The gateway limits chat streams separately with `CHAT_RATE_LIMIT_PER_MIN`
 (default 20 per user per minute).
 
-## 10. Verification status
+## 10. Routing and hybrid answers
+
+When `route` is omitted or `auto`, the classifier returns one of `documents`,
+`sql`, `hybrid`, or `out_of_scope` with a confidence and reason. Confidence at or
+above `ROUTER_CONFIDENCE_THRESHOLD` uses the predicted route; anything lower
+falls back to `hybrid` (decision D9). A classifier error or malformed payload
+uses a conservative lexical fallback and a `classifier unavailable` reason; it
+never fails the chat request. Explicit `documents`, `sql`, `hybrid`, or
+`out_of_scope` values bypass the classifier.
+
+`hybrid` starts access-filtered document retrieval and the SQL pipeline
+concurrently. If both succeed, one synthesis prompt receives the numbered
+document passages and the bounded SQL result; document claims use `[n]`
+citations and numbers come only from the result. If one branch fails, the answer
+degrades to the surviving source and `done.hybrid` records the failed branch. If
+both fail, the stream emits a `hybrid_failed` error rather than inventing an
+answer.
+
+Out-of-scope questions stream a short steer-back message with
+`answer_status: "out_of_scope"`. Follow-ups on both document and SQL/hybrid paths
+are rewritten from conversation history before retrieval or SQL generation. The
+UI shows a route badge (`Documents`, `Data`, `Docs + data`, or `Out of scope`)
+and defaults the composer to Auto mode.
+
+Routing quality is measured with `make routing-eval`, which runs
+`evals/datasets/routing.jsonl` through the same classifier and threshold and
+writes `evals/reports/routing.md`. The report distinguishes classifier failures
+from genuine misroutes; a run with failed calls is marked incomplete.
+
+## 11. Verification status
 
 Covered by tests: access-predicate construction for all three roles, RRF fusion and
 deduplication, the reranker candidate cap, retrieval stage spans, the confidence
@@ -244,12 +277,18 @@ gate, refusal handling, streamed citation validation with dropped-marker trackin
 no-valid-citation logging, time-to-first-token metadata, SSE parsing on both Node
 and web, no duplicate `done`, abort persistence, regenerate without a duplicate
 question, conversation ownership, feedback, and RTL citation/refusal/stop
-behaviour. An opt-in PostgreSQL integration test
+behaviour. Phase 5 adds router parsing/fallback, low-confidence hybrid fallback,
+explicit-route bypass, out-of-scope steering, follow-up rewriting, hybrid
+success with both evidence types, and hybrid partial-failure degradation. An
+opt-in PostgreSQL integration test
 (`make test-integration` with `VERITY_TEST_ADMIN_URL`) creates a disposable
 database and verifies that viewers, analysts, and admins see exactly the documents
 their role and group memberships allow.
 
-Not yet verified here: a full Docker cold start and p95 time-to-first-token. Those
-need the indexed demo corpus and a live model; the plan's 2.5-second target is
+Not yet verified here: a full Docker cold start, p95 time-to-first-token, and a
+complete routing-accuracy run. Those need the indexed demo corpus, Docker, and
+model quota; the plan's 2.5-second target and the ≥90% routing target are
 therefore not claimed as measured. The service now emits the TTFT measurement so
-that run can be performed without further instrumentation.
+that run can be performed without further instrumentation, and
+`make routing-eval` writes an explicitly incomplete report when classifier calls
+fail.

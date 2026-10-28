@@ -39,8 +39,8 @@ def patch_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_shots(*args: Any, **kwargs: Any) -> list[dict[str, str]]:
         return [{"question": "Revenue?", "sql": "SELECT 1"}]
 
-    monkeypatch.setattr("app.sql.service.retrieve_catalog_context", fake_context)
-    monkeypatch.setattr("app.sql.service.retrieve_few_shots", fake_shots)
+    monkeypatch.setattr("app.sql.pipeline.retrieve_catalog_context", fake_context)
+    monkeypatch.setattr("app.sql.pipeline.retrieve_few_shots", fake_shots)
 
 
 @pytest.mark.asyncio
@@ -68,8 +68,8 @@ async def test_sql_service_streams_sql_then_answer(
             execution_ms=4,
         )
 
-    monkeypatch.setattr("app.sql.service.generate_sql", fake_generate)
-    monkeypatch.setattr("app.sql.service.sql_execute", fake_execute)
+    monkeypatch.setattr("app.sql.pipeline.generate_sql", fake_generate)
+    monkeypatch.setattr("app.sql.pipeline.sql_execute", fake_execute)
 
     service = SqlChatService(settings, llm=SynthesisLLM(), embeddings=object())  # type: ignore[arg-type]
     events = [event async for event in service.stream(request())]
@@ -105,14 +105,12 @@ async def test_ambiguous_question_streams_clarification(
             clarification="Which quarter and which region do you mean?",
         )
 
-    monkeypatch.setattr("app.sql.service.generate_sql", fake_generate)
+    monkeypatch.setattr("app.sql.pipeline.generate_sql", fake_generate)
 
     service = SqlChatService(settings, llm=SynthesisLLM(), embeddings=object())  # type: ignore[arg-type]
     events = [event async for event in service.stream(request())]
 
-    tokens = "".join(
-        str(payload["text"]) for name, payload in events if name == "token"
-    )
+    tokens = "".join(str(payload["text"]) for name, payload in events if name == "token")
     assert "Which quarter" in tokens
     assert all(name != "sql" for name, _ in events)
     done = events[-1][1]
@@ -132,8 +130,8 @@ async def test_unsafe_sql_is_blocked_before_execution(
     async def fake_repair(*args: Any, **kwargs: Any) -> tuple[Any, Any, Any, list[Any], int, int]:
         return None, None, None, [], 0, 0
 
-    monkeypatch.setattr("app.sql.service.generate_sql", fake_generate)
-    monkeypatch.setattr("app.sql.service.repair_loop", fake_repair)
+    monkeypatch.setattr("app.sql.pipeline.generate_sql", fake_generate)
+    monkeypatch.setattr("app.sql.pipeline.repair_loop", fake_repair)
 
     service = SqlChatService(settings, llm=SynthesisLLM(), embeddings=object())  # type: ignore[arg-type]
     events = [event async for event in service.stream(request())]

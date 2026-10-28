@@ -76,11 +76,14 @@ Requires `Authorization: Bearer <token>`. Returns the current user:
 
 All require an `admin` access token.
 
-| Method  | Path                       | Purpose                                   |
-| ------- | -------------------------- | ----------------------------------------- |
-| `GET`   | `/api/auth/users`          | List users (no password hashes)           |
-| `PATCH` | `/api/auth/users/:id/role` | Change role; body `{ "role": "analyst" }` |
-| `GET`   | `/api/auth/groups`         | List document-access groups               |
+| Method  | Path                                | Purpose                                             |
+| ------- | ----------------------------------- | --------------------------------------------------- |
+| `GET`   | `/api/auth/users`                   | List users (no password hashes)                     |
+| `PATCH` | `/api/auth/users/:id/role`          | Change role; body `{ "role": "analyst" }`           |
+| `GET`   | `/api/auth/groups`                  | List document-access groups                         |
+| `GET`   | `/api/admin/schema-catalog`         | List business_ro view metadata                      |
+| `PATCH` | `/api/admin/schema-catalog/:view`   | Update view/column descriptions and examples        |
+| `POST`  | `/api/admin/schema-catalog/refresh` | Re-introspect business_ro views and refresh catalog |
 
 Role changes are validated with Zod and written to `app.auth_audit`. Non-admins
 receive `403 forbidden`.
@@ -317,6 +320,10 @@ returns `404 not_found`.
 ```
 
 - `question` is required unless `regenerate` is `true`; maximum 4000 characters.
+- `route` (optional) may be `"auto"` (or omitted), `"documents"`, `"sql"`,
+  `"hybrid"`, or `"out_of_scope"`. `auto` lets the AI service classify the
+  question; any explicit value bypasses the classifier. The web UI defaults to
+  Auto and still offers Documents and Data modes.
 - Omitting `conversation_id` creates a conversation and titles it from the first
   60 characters of the question. The new id is sent immediately in a
   `conversation` event.
@@ -339,7 +346,7 @@ event: status
 data: {"stage":"retrieving","message":"Searching accessible documents…"}
 
 event: route
-data: {"route":"documents"}
+data: {"route":"hybrid","confidence":0.88,"reason":"policy target plus return-rate data","fallback":false,"classified_route":"hybrid"}
 
 event: token
 data: {"text":"Employees receive 25 days"}
@@ -351,15 +358,16 @@ event: done
 data: {"message_id":"<uuid>","conversation_id":"<uuid>","route":"documents","trace_id":"<trace>","latency_ms":1840,"time_to_first_token_ms":1180,"usage":{"prompt_tokens":1200,"completion_tokens":85},"low_confidence":false,"answer_status":"answered","cited_indices":[1],"citation_count":1,"invalid_citation_count":0,"aborted":false,"persisted":true}
 ```
 
-| Event          | Payload                                                                                            | When                                   |
-| -------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `conversation` | `{ "conversation_id": string }`                                                                    | Immediately after the thread is known  |
-| `status`       | `{ "stage": "rewriting" \| "retrieving" \| "writing", "message": string }`                         | Progress updates                       |
-| `route`        | `{ "route": "documents" }`                                                                         | Before retrieval (Phase 3 is RAG-only) |
-| `token`        | `{ "text": string }`                                                                               | Streamed answer chunks                 |
-| `sources`      | `{ "citations": Citation[] }`                                                                      | After retrieval or before `done`       |
-| `error`        | `{ "code": string, "message": string }`                                                            | Recoverable or fatal stream error      |
-| `done`         | `{ message_id, conversation_id, route, trace_id, latency_ms, time_to_first_token_ms, usage, ... }` | Successful completion only             |
+| Event          | Payload                                                                                                                                                        | When                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| `conversation` | `{ "conversation_id": string }`                                                                                                                                | Immediately after the thread is known |
+| `status`       | `{ "stage": "rewriting" \| "retrieving" \| "writing" \| "routing" \| "generating_sql" \| "running_sql" \| "synthesizing" \| "running", "message": string }`    | Progress updates                      |
+| `route`        | `{ "route": "documents" \| "sql" \| "hybrid" \| "out_of_scope", "confidence"?: number, "reason"?: string, "fallback"?: boolean, "classified_route"?: string }` | Route selection                       |
+| `token`        | `{ "text": string }`                                                                                                                                           | Streamed answer chunks                |
+| `sources`      | `{ "citations": Citation[] }`                                                                                                                                  | After retrieval or before `done`      |
+| `sql`          | `{ "sql": string, "columns": string[], "rows": any[], "row_count": number, "truncated": boolean, "execution_ms": number }`                                     | After SQL execution (data mode)       |
+| `error`        | `{ "code": string, "message": string }`                                                                                                                        | Recoverable or fatal stream error     |
+| `done`         | `{ message_id, conversation_id, route, trace_id, latency_ms, time_to_first_token_ms, usage, sql_outcome?, router?, hybrid?, ... }`                             | Successful completion only            |
 
 `citation` objects contain `id` (chunk id), `document_id`, `title`, `page`,
 `section`, `snippet`, and a 0–1 `score`. Inline `[n]` markers map to the entries
@@ -373,6 +381,17 @@ Refusals are a normal answer, not an error: the refusal text streams as tokens,
 `sources` is empty, and `done.answer_status` is `refused` with
 `low_confidence: true`. `answer_status` is `uncited` when the model answered but
 cited nothing.
+
+Automatic routing runs only when `route` is omitted or `auto`. The classifier
+returns a route, a 0–1 confidence, and a short reason; classifications below
+`ROUTER_CONFIDENCE_THRESHOLD` (default `0.7`) fall back to `hybrid`. The applied
+route and the classifier's original choice are both included in the `route`
+event and in `done.router`. Hybrid answers emit the `sql` event and may include
+both document citations and `sql_outcome`; `done.hybrid` reports the status of
+each branch (`ok`, `low_confidence`, `empty`, `failed`, or the SQL outcome).
+If one branch fails the answer degrades to the surviving source. Out-of-scope
+questions return a brief steer-back message with `answer_status: "out_of_scope"`
+and no citations.
 
 If the client aborts the request, the gateway stops the upstream stream, persists
 any non-empty partial answer with `metadata.answer_status = "aborted"`, and does
@@ -531,9 +550,13 @@ Signed streaming request from the gateway:
     { "role": "user", "content": "Tell me about benefits" },
     { "role": "assistant", "content": "Benefits include…" }
   ],
+  "route": "auto",
   "trace_id": "optional-upstream-trace"
 }
 ```
+
+`route` is optional and defaults to `auto`. Explicit `documents`, `sql`,
+`hybrid`, or `out_of_scope` values bypass the classifier.
 
 The AI service rewrites follow-ups when history exists, retrieves with the
 caller's access context, reranks, applies the confidence gate, and streams

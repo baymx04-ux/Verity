@@ -19,7 +19,7 @@ const chatStreamSchema = z
     conversation_id: z.string().uuid().optional(),
     question: z.string().trim().min(1, 'Question cannot be empty').max(4000).optional(),
     regenerate: z.boolean().optional(),
-    route: z.enum(['documents', 'sql']).optional(),
+    route: z.enum(['auto', 'documents', 'sql', 'hybrid', 'out_of_scope']).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.regenerate) {

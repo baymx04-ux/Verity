@@ -42,7 +42,9 @@ class ChatService:
         self._llm = llm
         self._rewriter = rewriter or QueryRewriter(llm)
 
-    async def stream(self, request: ChatRequest) -> AsyncIterator[ChatEvent]:
+    async def stream(
+        self, request: ChatRequest, *, emit_route: bool = True
+    ) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
         first_token_ms: int | None = None
         trace = Trace(request.trace_id) if request.trace_id else Trace()
@@ -63,7 +65,15 @@ class ChatService:
         else:
             question = request.question.strip()
 
-        yield "route", {"route": "documents"}
+        if emit_route:
+            yield (
+                "route",
+                {
+                    "route": "documents",
+                    "confidence": 1.0,
+                    "reason": "explicit mode",
+                },
+            )
         yield "status", {"stage": "retrieving", "message": "Searching accessible documents…"}
 
         try:

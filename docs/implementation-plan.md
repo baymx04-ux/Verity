@@ -1,6 +1,6 @@
 # Verity — Implementation Plan
 
-**Status:** Approved for implementation. Phases 0–3 are implemented and covered by the Node/Python test suites; Docker cold-start and a measured time-to-first-token run are deferred to Phase 7. Phase 4 (text-to-SQL) is next. Application features begin with Phase 1 auth, RBAC, and the app shell.
+**Status:** Approved for implementation. Phases 0–5 are implemented and covered by the Node/Python test suites; Docker cold-start, a measured time-to-first-token run, and a complete routing-accuracy measurement are deferred to Phase 7 or until quota is available. Application features begin with Phase 1 auth, RBAC, and the app shell.
 **Sources:** `plan.md` (behavior, architecture, scope), `design.md` (visual system, UX), `verity_slate_design.md_specification.md` (supplementary design spec).
 **Precedence:** `plan.md` wins on behavior and architecture; `design.md` wins on visuals and UX. The supplementary spec is used only where it does not contradict either.
 
@@ -470,6 +470,10 @@ verified. See [`retrieval.md`](./retrieval.md).
 
 ### Phase 4 — Text-to-SQL
 
+**Status:** implemented. Read-only views, catalog, validator, executor, repair
+loop, SQL panel, and tests are in place. Live Docker acceptance remains deferred
+with the rest of the stack.
+
 **Goal:** safe, inspectable data answers.
 
 **Tasks**
@@ -497,6 +501,13 @@ verified. See [`retrieval.md`](./retrieval.md).
 ---
 
 ### Phase 5 — Router and hybrid answers
+
+**Status:** implemented. Automatic routing, out-of-scope steering, concurrent
+hybrid answers with partial-failure degradation, route events/badges, and
+follow-up rewriting are covered by tests. `evals/datasets/routing.jsonl` has 50
+cases and `make routing-eval` measures them. A complete accuracy run is still
+pending: the available Google quota was exhausted mid-measurement (all 37
+classifier-available cases were correct), so the ≥90% acceptance is not claimed.
 
 **Goal:** correct path selection and combined evidence.
 

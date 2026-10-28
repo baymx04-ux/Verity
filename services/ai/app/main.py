@@ -11,6 +11,8 @@ from app.llm.factory import build_llm_client
 from app.rag.rerank import build_reranker
 from app.rag.retrieval import PostgresRetrievalStore, RetrievalService
 from app.rag.service import ChatService
+from app.router.hybrid import HybridChatService
+from app.router.service import RoutedChatService
 from app.routers import chat, health, ingest
 from app.routers import schema as schema_router
 from app.sql.service import SqlChatService
@@ -46,6 +48,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.chat_service = ChatService(resolved, retrieval=retrieval, llm=llm)
     app.state.sql_chat_service = SqlChatService(resolved, llm=llm, embeddings=embeddings)
+    app.state.hybrid_chat_service = HybridChatService(
+        resolved,
+        retrieval=retrieval,
+        llm=llm,
+        embeddings=embeddings,
+    )
+    router_llm = llm
+    if resolved.router_model and resolved.router_model != resolved.llm_model:
+        router_llm = build_llm_client(
+            resolved.model_copy(update={"llm_model": resolved.router_model})
+        )
+    app.state.routed_chat_service = RoutedChatService(
+        resolved,
+        documents=app.state.chat_service,
+        sql=app.state.sql_chat_service,
+        hybrid=app.state.hybrid_chat_service,
+        router_llm=router_llm,
+    )
     # Expose embeddings client for the schema router
     app.state.embeddings_client = embeddings
 
@@ -55,4 +75,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(schema_router.router)
 
     return app
-

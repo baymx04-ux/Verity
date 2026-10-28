@@ -58,6 +58,18 @@ def chat_client(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> TestClie
 
     monkeypatch.setattr(app.state.chat_service._llm, "stream", fake_stream)
 
+    class RouterLLM:
+        name = "fake-router"
+
+        async def stream(self, **_: object) -> AsyncIterator[LLMDelta]:
+            yield LLMDelta(
+                text='{"route":"documents","confidence":0.95,"reason":"policy question"}',
+                prompt_tokens=4,
+                completion_tokens=3,
+            )
+
+    app.state.routed_chat_service._router_llm = RouterLLM()
+
     return TestClient(app)
 
 
@@ -115,30 +127,34 @@ def test_chat_stream_dispatches_sql_route(chat_client: TestClient) -> None:
     payload["route"] = "sql"
 
     async def fake_sql_stream(
-        request: object,
+        request: object, *, emit_route: bool = True
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
-        yield "route", {"route": "sql"}
+        if emit_route:
+            yield "route", {"route": "sql"}
         yield "token", {"text": "Answer from data."}
         yield "sources", {"citations": []}
-        yield "done", {
-            "route": "sql",
-            "trace_id": "trace-sql",
-            "latency_ms": 12,
-            "answer_status": "answered",
-            "usage": {"prompt_tokens": 1, "completion_tokens": 2},
-            "sql_outcome": {"outcome": "success"},
-        }
+        yield (
+            "done",
+            {
+                "route": "sql",
+                "trace_id": "trace-sql",
+                "latency_ms": 12,
+                "answer_status": "answered",
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+                "sql_outcome": {"outcome": "success"},
+            },
+        )
 
     class FakeSqlService:
         stream = staticmethod(fake_sql_stream)
 
-    cast(FastAPI, chat_client.app).state.sql_chat_service = FakeSqlService()
+    cast(FastAPI, chat_client.app).state.routed_chat_service._sql = FakeSqlService()
 
     body = json.dumps(payload).encode()
     headers = sign("POST", "/chat/stream", body)
     response = chat_client.post("/chat/stream", content=body, headers=headers)
 
     assert response.status_code == 200
-    assert 'data: {"route":"sql"}' in response.text
+    assert '"route":"sql"' in response.text
     assert "Answer from data." in response.text
     assert '"sql_outcome":{"outcome":"success"}' in response.text

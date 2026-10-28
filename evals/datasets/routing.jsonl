@@ -1,0 +1,50 @@
+{"id":"doc-01","question":"What is the employee annual leave policy?","route":"documents"}
+{"id":"doc-02","question":"How many vacation days do new employees get in their first year?","route":"documents"}
+{"id":"doc-03","question":"What are the return rules for damaged goods?","route":"documents"}
+{"id":"doc-04","question":"What does the remote work policy say about working from another country?","route":"documents"}
+{"id":"doc-05","question":"How should I submit a travel expense claim?","route":"documents"}
+{"id":"doc-06","question":"What is the process for requesting parental leave?","route":"documents"}
+{"id":"doc-07","question":"Which password requirements apply to company accounts?","route":"documents"}
+{"id":"doc-08","question":"What is the data retention guideline for customer records?","route":"documents"}
+{"id":"doc-09","question":"How do I report a security incident?","route":"documents"}
+{"id":"doc-10","question":"What are the shipping options for international orders?","route":"documents"}
+{"id":"doc-11","question":"What does the onboarding checklist cover in the first week?","route":"documents"}
+{"id":"doc-12","question":"Is multi-factor authentication required for contractors?","route":"documents"}
+{"id":"doc-13","question":"What is the procurement approval process for new software?","route":"documents"}
+{"id":"doc-14","question":"Where can I find the code of conduct policy?","route":"documents"}
+{"id":"doc-15","question":"What are the rules for carrying over unused holiday?","route":"documents"}
+{"id":"sql-01","question":"What was total revenue by region last quarter?","route":"sql"}
+{"id":"sql-02","question":"How many orders did we receive last month?","route":"sql"}
+{"id":"sql-03","question":"Which product categories have the highest return rate?","route":"sql"}
+{"id":"sql-04","question":"What is the average order value by customer segment?","route":"sql"}
+{"id":"sql-05","question":"Show monthly revenue for the last twelve months.","route":"sql"}
+{"id":"sql-06","question":"How many active customers do we have by region?","route":"sql"}
+{"id":"sql-07","question":"Which ten products sold the most units last quarter?","route":"sql"}
+{"id":"sql-08","question":"What was year-over-year revenue growth in EMEA?","route":"sql"}
+{"id":"sql-09","question":"How many support tickets were opened by priority last month?","route":"sql"}
+{"id":"sql-10","question":"What was the total refund amount by region?","route":"sql"}
+{"id":"sql-11","question":"How many employees are in each department?","route":"sql"}
+{"id":"sql-12","question":"What is gross margin by product category?","route":"sql"}
+{"id":"sql-13","question":"Which sales channel generated the most orders last quarter?","route":"sql"}
+{"id":"sql-14","question":"What is the average delivery time by carrier?","route":"sql"}
+{"id":"sql-15","question":"List the top five customers by lifetime revenue.","route":"sql"}
+{"id":"hybrid-01","question":"Is our return rate within the policy target?","route":"hybrid"}
+{"id":"hybrid-02","question":"Are we meeting the 5% return-rate limit this quarter?","route":"hybrid"}
+{"id":"hybrid-03","question":"Does average order value meet the free-shipping threshold in the policy?","route":"hybrid"}
+{"id":"hybrid-04","question":"Are support response times within the service-level target?","route":"hybrid"}
+{"id":"hybrid-05","question":"Is revenue growth above the board's 10% target?","route":"hybrid"}
+{"id":"hybrid-06","question":"How many travel expenses exceeded the policy limit last quarter?","route":"hybrid"}
+{"id":"hybrid-07","question":"Do any regions fall below the minimum margin policy?","route":"hybrid"}
+{"id":"hybrid-08","question":"Is our refund rate within the handbook threshold?","route":"hybrid"}
+{"id":"hybrid-09","question":"Are we complying with the 30-day return processing policy?","route":"hybrid"}
+{"id":"hybrid-10","question":"Is current inventory within the stock policy limits?","route":"hybrid"}
+{"id":"hybrid-11","question":"Are ticket volumes within the support capacity policy?","route":"hybrid"}
+{"id":"hybrid-12","question":"Which products are priced below the minimum-margin guideline?","route":"hybrid"}
+{"id":"oos-01","question":"Hello, how are you?","route":"out_of_scope"}
+{"id":"oos-02","question":"Thanks, that was helpful!","route":"out_of_scope"}
+{"id":"oos-03","question":"Who are you and what can you do?","route":"out_of_scope"}
+{"id":"oos-04","question":"Write me a Python function that reverses a linked list.","route":"out_of_scope"}
+{"id":"oos-05","question":"What is the capital of France?","route":"out_of_scope"}
+{"id":"oos-06","question":"Tell me a joke about databases.","route":"out_of_scope"}
+{"id":"oos-07","question":"What's the weather in London tomorrow?","route":"out_of_scope"}
+{"id":"oos-08","question":"Summarise the latest football transfer news.","route":"out_of_scope"}

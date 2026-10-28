@@ -168,6 +168,85 @@ describe('chat, conversations, and feedback api', () => {
     expect(res.body.error.code).toBe('invalid_request');
   });
 
+  it('accepts explicit hybrid and auto routes', async () => {
+    const convId = '11111111-1111-1111-1111-111111111111';
+    const messageId = '22222222-2222-2222-2222-222222222222';
+    const userId = '33333333-3333-3333-3333-333333333333';
+    const captured: Array<Record<string, unknown>> = [];
+
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        if (sql.includes('SELECT id, user_id') && sql.includes('FROM app.conversations')) {
+          return {
+            rows: [
+              {
+                id: convId,
+                user_id: userId,
+                title: 'Hybrid thread',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ],
+            rowCount: 1,
+          };
+        }
+        if (sql.includes('INSERT INTO app.messages')) {
+          return { rows: [{ id: messageId }], rowCount: 1 };
+        }
+        if (sql.includes('SELECT role, content FROM app.messages')) {
+          return { rows: [], rowCount: 0 };
+        }
+        return { rows: [], rowCount: 0 };
+      }),
+    } as unknown as Pool;
+
+    const ai = createAiClientStub({
+      chatStream: async (payload) => {
+        captured.push(payload as unknown as Record<string, unknown>);
+        return new Response(
+          'event: route\ndata: {"route":"hybrid"}\n\nevent: token\ndata: {"text":"Combined."}\n\nevent: done\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        );
+      },
+    });
+
+    const chatService = new ChatService(pool, ai, logger);
+    const app = express();
+    app.use(express.json());
+    app.use(optionalAuthenticate(config, logger));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
+
+    for (const route of ['hybrid', 'auto', 'out_of_scope'] as const) {
+      const res = await request(app)
+        .post('/api/chat/stream')
+        .set('Authorization', auth('analyst', userId))
+        .send({ conversation_id: convId, question: 'Is the return rate on target?', route });
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('event: done');
+    }
+
+    expect(captured.map((payload) => payload['route'])).toEqual(['hybrid', 'auto', 'out_of_scope']);
+  });
+
+  it('rejects an unknown route before calling the AI service', async () => {
+    const pool = { query: vi.fn() } as unknown as Pool;
+    const chatService = new ChatService(pool, createAiClientStub(), logger);
+
+    const app = express();
+    app.use(express.json());
+    app.use(optionalAuthenticate(config, logger));
+    app.use('/api/chat', createChatRouter({ chatService, logger, config }));
+
+    const res = await request(app)
+      .post('/api/chat/stream')
+      .set('Authorization', auth('analyst'))
+      .send({ question: 'Hello', route: 'general' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_request');
+    expect(pool.query).not.toHaveBeenCalled();
+  });
+
   it('manages conversations CRUD', async () => {
     const convId = '11111111-1111-1111-1111-111111111111';
     const userId = '33333333-3333-3333-3333-333333333333';

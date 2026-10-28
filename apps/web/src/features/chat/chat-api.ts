@@ -31,10 +31,12 @@ export interface SqlResultPreview {
 }
 
 export interface MessageMetadata {
-  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification';
+  answer_status?:
+    'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification' | 'out_of_scope';
   aborted?: boolean;
   low_confidence?: boolean;
   model?: string;
+  router?: Record<string, unknown>;
   spans?: Record<string, number>;
   cited_indices?: number[];
   citation_count?: number;
@@ -87,9 +89,12 @@ export interface StreamDonePayload {
   aborted?: boolean;
   persisted?: boolean;
   sql_outcome?: Record<string, unknown>;
+  router?: Record<string, unknown>;
 }
 
-export type ChatRoute = 'documents' | 'sql';
+export type ChatRoute = 'auto' | 'documents' | 'sql' | 'hybrid' | 'out_of_scope';
+/** Answer modes a user can pick in the composer. */
+export type ChatMode = 'auto' | 'documents' | 'sql';
 
 export interface StreamHandlers {
   onConversation?: (conversationId: string) => void;

@@ -12,7 +12,7 @@ export interface AiIngestResult {
   status: 'indexed';
 }
 
-export type ChatRoute = 'documents' | 'sql';
+export type ChatRoute = 'auto' | 'documents' | 'sql' | 'hybrid' | 'out_of_scope';
 
 export interface AiChatStreamPayload {
   conversation_id: string;
@@ -24,7 +24,7 @@ export interface AiChatStreamPayload {
   };
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   trace_id?: string | null;
-  /** Phase 4 uses an explicit mode; Phase 5 replaces this with a router. */
+  /** Empty/"auto" lets the AI service classify the question; explicit routes bypass it. */
   route?: ChatRoute;
 }
 export class AiRequestError extends Error {

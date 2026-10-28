@@ -88,6 +88,33 @@ describe('MessageItem citations', () => {
     expect(screen.getByText(/Generation was stopped/)).toBeInTheDocument();
   });
 
+  it('labels hybrid answers as combined evidence', () => {
+    renderMessage(
+      assistantMessage({
+        route: 'hybrid',
+        content: 'Returns are within the 5% target [1].',
+      }),
+    );
+
+    expect(screen.getByText('Combined answer')).toBeInTheDocument();
+    expect(screen.getByText('Docs + data')).toBeInTheDocument();
+  });
+
+  it('labels an out-of-scope steer-back without a refusal panel', () => {
+    renderMessage(
+      assistantMessage({
+        route: 'out_of_scope',
+        content:
+          'I can help with questions about your company documents or business data. What would you like to know?',
+        citations: [],
+        metadata: { answer_status: 'out_of_scope', low_confidence: false },
+      }),
+    );
+
+    expect(screen.getAllByText('Out of scope')).toHaveLength(2);
+    expect(screen.queryByText('Insufficient document evidence')).not.toBeInTheDocument();
+  });
+
   it('copies the answer and exposes regenerate on the latest answer', async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });

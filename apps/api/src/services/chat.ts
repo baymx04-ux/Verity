@@ -24,10 +24,12 @@ export interface MessageCitation {
 }
 
 export interface MessageMetadata {
-  answer_status?: 'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification';
+  answer_status?:
+    'answered' | 'refused' | 'uncited' | 'aborted' | 'error' | 'clarification' | 'out_of_scope';
   aborted?: boolean;
   low_confidence?: boolean;
   model?: string;
+  router?: Record<string, unknown>;
   spans?: Record<string, number>;
   cited_indices?: number[];
   citation_count?: number;
@@ -223,7 +225,7 @@ export class ChatService {
   async streamChat(options: StreamChatOptions): Promise<void> {
     const { user, onEvent, signal } = options;
     const regenerate = options.regenerate === true;
-    const route: ChatRoute = options.route === 'sql' ? 'sql' : 'documents';
+    const route: ChatRoute = options.route ?? 'auto';
     let convId = options.conversationId;
     let prompt = (options.question ?? '').trim();
     let createdNew = false;
@@ -450,6 +452,7 @@ export class ChatService {
     const spans = asNumberRecord(upstreamDone.spans);
     const retrieval = asNumberRecord(upstreamDone.retrieval);
     const sqlOutcome = asRecord(upstreamDone.sql_outcome);
+    const router = asRecord(upstreamDone.router);
     const model = asString(upstreamDone.model);
 
     const metadata: MessageMetadata = {
@@ -464,6 +467,7 @@ export class ChatService {
       ...(spans ? { spans } : {}),
       ...(retrieval ? { retrieval } : {}),
       ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
+      ...(Object.keys(router).length > 0 ? { router } : {}),
       ...(failure ? { error_code: failure.code } : {}),
     };
 
@@ -529,6 +533,7 @@ export class ChatService {
         aborted: false,
         persisted: messageId !== null,
         ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
+        ...(Object.keys(router).length > 0 ? { router } : {}),
       });
     }
   }
@@ -568,7 +573,8 @@ function normalizeAnswerStatus(value: unknown): NonNullable<MessageMetadata['ans
   return status === 'refused' ||
     status === 'uncited' ||
     status === 'answered' ||
-    status === 'clarification'
+    status === 'clarification' ||
+    status === 'out_of_scope'
     ? status
     : 'answered';
 }

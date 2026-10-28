@@ -1,9 +1,8 @@
 """Internal signed SSE endpoint for grounded chat.
 
-Dispatches to either the RAG ChatService (route='documents', default) or
-the SQL SqlChatService (route='sql') based on the optional `route` field in
-the request body. Phase 5 will add an automatic router classifier; for Phase 4
-the gateway can explicitly set route='sql' for data questions.
+All requests go through the routed chat service. A request without a ``route``
+(or with ``route="auto"``) is classified into documents, SQL, hybrid, or
+out-of-scope. Explicit routes bypass the classifier.
 """
 
 from __future__ import annotations
@@ -19,8 +18,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.security import require_internal_signature
 from app.models.chat import ChatRequest
-from app.rag.service import ChatService
-from app.sql.service import SqlChatService
+from app.router.service import RoutedChatService
 
 logger = logging.getLogger(__name__)
 
@@ -34,14 +32,8 @@ def format_sse(event: str, data: dict[str, Any]) -> str:
 
 @router.post("/chat/stream")
 async def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
-    route = getattr(payload, "route", None) or "documents"
-
-    if route == "sql":
-        sql_service: SqlChatService = request.app.state.sql_chat_service
-        stream_iter = sql_service.stream(payload)
-    else:
-        rag_service: ChatService = request.app.state.chat_service
-        stream_iter = rag_service.stream(payload)
+    routed: RoutedChatService = request.app.state.routed_chat_service
+    stream_iter = routed.stream(payload)
 
     async def events() -> AsyncIterator[str]:
         try:

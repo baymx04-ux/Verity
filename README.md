@@ -4,14 +4,22 @@ Verity is a single-tenant, role-based enterprise knowledge base: RAG over intern
 documents plus a guarded text-to-SQL layer over live business data. Every answer
 is designed to show its evidence — cited document chunks or the SQL that ran.
 
-**Current state:** Phases 0–3 are implemented. Auth, RBAC, the design system, the
+**Current state:** Phases 0–5 are implemented. Auth, RBAC, the design system, the
 app shell, document upload, MinIO storage, the BullMQ ingestion worker, AI
 parsing/chunking/embedding, the documents library, hybrid retrieval, reranking,
 and grounded SSE chat are in place and covered by the Node and Python suites.
 Docker Compose startup is config-validated but a full cold-start run is still
 deferred to Phase 7, and the time-to-first-token target has not yet been measured
-against a live model. Text-to-SQL arrives in Phase 4. See [`plan.md`](./plan.md)
-for behavior and [`design.md`](./design.md) for the visual system.
+against a live model. Text-to-SQL (Phase 4) is implemented with read-only
+`business_ro` access, schema catalog, SQL validation/execution, and a SQL
+results panel. Phase 5 adds automatic intent routing (documents, SQL, hybrid, or
+out-of-scope), concurrent document + SQL hybrid answers with partial-failure
+degradation, follow-up rewriting on both paths, and route badges in the chat UI.
+The routing dataset and harness are in place, but a complete ≥90% measurement is
+still pending because the model quota was exhausted mid-run; see
+[`evals/datasets/README.md`](./evals/datasets/README.md). See
+[`plan.md`](./plan.md) for behavior and [`design.md`](./design.md) for the
+visual system.
 
 ## Quick start
 
@@ -243,8 +251,9 @@ make audit           # npm audit + pip-audit
   keyword retrieval only, so pgvector is not required.
 - CI runs web/API formatting, lint, typecheck, tests, build; AI lint, format,
   typecheck, tests; and `docker compose build`. The audit job is advisory.
-- There is no RAGAS evaluation yet. Datasets and scores land in Phase 6; nothing
-  is fabricated for Phase 0.
+- There is no RAGAS evaluation yet. RAGAS scores land in Phase 6; nothing is
+  fabricated. Phase 5 ships a labeled routing dataset and `make routing-eval`.
+  A complete routing accuracy run is deferred until model quota is available.
 
 ## Roadmap
 
@@ -254,8 +263,8 @@ make audit           # npm audit + pip-audit
 | 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green              |
 | 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green              |
 | 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; DB leakage test added, live TTFT deferred |
-| 4     | Business data, read-only views, SQL validation, SQL UI  | Planned                                                |
-| 5     | Router, hybrid answers, conversation memory             | Planned                                                |
+| 4     | Business data, read-only views, SQL validation, SQL UI  | Implemented                                            |
+| 5     | Router, hybrid answers, conversation memory             | Implemented; routing accuracy measurement incomplete   |
 | 6     | Langfuse, metrics, eval harness, feedback               | Planned                                                |
 | 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                                |
 
@@ -266,7 +275,8 @@ make audit           # npm audit + pip-audit
   [`docs/implementation-plan.md`](./docs/implementation-plan.md).
 - The design spec's multi-warehouse connectors, global search, cryptographic
   "attestation", fabricated scan counts, and manual route selector are **not**
-  implemented because the plan does not define them.
+  implemented. Verity routes automatically on the server and keeps explicit
+  Documents/Data modes as an escape hatch.
 - Langfuse is deferred to Phase 6 rather than mocked.
 - Images are pinned where practical. The MinIO image follows `latest` (currently
   the `coollabsio/minio` mirror because the upstream image was unavailable); it

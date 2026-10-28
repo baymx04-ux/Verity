@@ -1,10 +1,10 @@
 # Datasets
 
-Evaluation datasets live here. Phase 6 adds the RAGAS harness, retrieval
-goldens, and SQL cases described in `plan.md`.
+Evaluation datasets live here.
 
-- `rag_questions.jsonl` — question, expected answer, expected source chunks
-- `sql_questions.jsonl` — question, expected result, forbidden operations
-- `refusal_cases.jsonl` — questions that must be refused
-
-No dataset ships with Phase 0.
+- `routing.jsonl` — labeled router cases (`documents`, `sql`, `hybrid`,
+  `out_of_scope`). Phase 5 measures it with `make routing-eval`
+  (`evals/run_routing.py`) and writes `evals/reports/routing.md`.
+- `rag_questions.jsonl` — question, expected answer, expected source chunks (Phase 6)
+- `sql_questions.jsonl` — question, expected result, forbidden operations (Phase 6)
+- `refusal_cases.jsonl` — questions that must be refused (Phase 6)

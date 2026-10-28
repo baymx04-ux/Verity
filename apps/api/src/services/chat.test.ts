@@ -257,6 +257,61 @@ describe('ChatService streaming', () => {
     expect(done['message_id']).toBe(assistantId);
   });
 
+  it('defaults to auto routing and persists hybrid route plus router metadata', async () => {
+    const captured: { payload?: AiChatStreamPayload } = {};
+    const ai = createAiClientStub({
+      chatStream: async (payload) => {
+        captured.payload = payload;
+        return new Response(
+          `event: conversation\ndata: {"conversation_id":"${conversationId}"}\n\n` +
+            'event: route\ndata: {"route":"hybrid","confidence":0.88,"reason":"policy and data"}\n\n' +
+            'event: sql\ndata: {"sql":"SELECT return_rate FROM business_ro.v_returns LIMIT 5","columns":["return_rate"],"rows":[{"return_rate":0.04}],"row_count":1,"truncated":false,"execution_ms":3}\n\n' +
+            'event: token\ndata: {"text":"Returns are within the 5% target [1]."}\n\n' +
+            'event: sources\ndata: {"citations":[{"id":"c1","document_id":"d1","title":"Returns Policy","page":1,"section":"Targets","snippet":"Target is 5%.","score":0.9}]}\n\n' +
+            'event: done\ndata: {"trace_id":"trace-hybrid","latency_ms":120,"time_to_first_token_ms":70,"low_confidence":false,"answer_status":"answered","cited_indices":[1],"citation_count":1,"invalid_citation_count":0,"usage":{"prompt_tokens":30,"completion_tokens":12},"sql_outcome":{"outcome":"success"},"router":{"route":"hybrid","confidence":0.88,"fallback":false,"reason":"policy and data"}}\n\n',
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        );
+      },
+    });
+
+    const pool = {
+      query: vi.fn(async (sql: string, params: unknown[]) => {
+        if (sql.includes('FROM app.conversations'))
+          return { rows: [conversationRow()], rowCount: 1 };
+        if (insertAssistantId(sql, params)) {
+          return { rows: [{ id: assistantId }], rowCount: 1 };
+        }
+        if (sql.includes('INSERT INTO app.messages')) return { rows: [], rowCount: 1 };
+        if (sql.includes('FROM app.messages')) return { rows: [], rowCount: 0 };
+        return { rows: [], rowCount: 1 };
+      }),
+    } as unknown as Pool;
+
+    const service = new ChatService(pool, ai, logger);
+    const events: Array<[string, unknown]> = [];
+
+    await service.streamChat({
+      user,
+      conversationId,
+      question: 'Is our return rate within the policy target?',
+      onEvent: (event, data) => events.push([event, data]),
+    });
+
+    expect(captured.payload?.route).toBe('auto');
+
+    const done = events.find(([event]) => event === 'done')?.[1] as Record<string, unknown>;
+    expect(done['route']).toBe('hybrid');
+    expect(done['router']).toMatchObject({ route: 'hybrid', confidence: 0.88 });
+
+    const insert = vi
+      .mocked(pool.query)
+      .mock.calls.find(([sql, params]) => insertAssistantId(sql, params as unknown[]));
+    expect(insert?.[1]?.[2]).toBe('hybrid');
+    const metadata = JSON.parse(String(insert?.[1]?.[10])) as Record<string, unknown>;
+    expect(metadata['router']).toMatchObject({ route: 'hybrid', fallback: false });
+    expect(metadata['answer_status']).toBe('answered');
+  });
+
   it('forwards sql mode, persists the query/result, and relays sql metadata', async () => {
     const captured: { payload?: AiChatStreamPayload } = {};
     const ai = createAiClientStub({

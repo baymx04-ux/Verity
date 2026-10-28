@@ -1,9 +1,9 @@
-import { ArrowUp, Database, FileText, Square } from 'lucide-react';
+import { ArrowUp, Database, FileText, Sparkles, Square } from 'lucide-react';
 import { type KeyboardEvent, useRef } from 'react';
 
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
-import type { ChatRoute } from './chat-api';
+import type { ChatMode } from './chat-api';
 
 interface ComposerProps {
   question: string;
@@ -12,8 +12,8 @@ interface ComposerProps {
   onStop?: () => void;
   isStreaming: boolean;
   disabled?: boolean;
-  mode: ChatRoute;
-  onModeChange: (mode: ChatRoute) => void;
+  mode: ChatMode;
+  onModeChange: (mode: ChatMode) => void;
 }
 
 export function Composer({
@@ -53,7 +53,9 @@ export function Composer({
           placeholder={
             mode === 'sql'
               ? 'Ask a data question, e.g. “Revenue by region last quarter”…'
-              : 'Ask a question about your documents…'
+              : mode === 'auto'
+                ? 'Ask anything about your documents or company data…'
+                : 'Ask a question about your documents…'
           }
           className="min-h-16 w-full resize-none border-0 bg-transparent px-4 py-3 text-body-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
         />
@@ -64,6 +66,20 @@ export function Composer({
             role="group"
             aria-label="Answer mode"
           >
+            <button
+              type="button"
+              aria-pressed={mode === 'auto'}
+              onClick={() => onModeChange('auto')}
+              disabled={isStreaming}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                mode === 'auto'
+                  ? 'bg-violet-50 text-violet-800'
+                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+              }`}
+            >
+              <Sparkles className="size-3" aria-hidden="true" />
+              Auto
+            </button>
             <button
               type="button"
               aria-pressed={mode === 'documents'}
@@ -135,7 +151,9 @@ export function Composer({
         for a new line.{' '}
         {mode === 'sql'
           ? 'Data answers show the read-only SQL and result table.'
-          : 'Citations map to the retrieved document passages.'}
+          : mode === 'auto'
+            ? 'Auto picks documents, data, or both depending on the question.'
+            : 'Citations map to the retrieved document passages.'}
       </p>
     </div>
   );
