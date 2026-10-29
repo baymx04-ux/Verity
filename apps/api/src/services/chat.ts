@@ -3,6 +3,12 @@ import type { Pool } from 'pg';
 import type { ChatRoute, InternalAiClient } from '../ai-client/internal';
 import type { Logger } from '../config/logger';
 import type { AuthUser } from '../types/auth';
+import {
+  DEFAULT_TOKEN_RATES,
+  estimateCostUsd,
+  hasConfiguredPricing,
+  type TokenRates,
+} from '../utils/cost';
 import { createSseParser } from './sse';
 
 export interface ConversationRow {
@@ -37,6 +43,8 @@ export interface MessageMetadata {
   time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
   sql_outcome?: Record<string, unknown>;
+  route_confidence?: number | null;
+  cost_usd?: number;
   error_code?: string;
   [key: string]: unknown;
 }
@@ -83,6 +91,7 @@ export class ChatService {
     private readonly pool: Pool,
     private readonly ai: InternalAiClient,
     private readonly logger: Logger,
+    private readonly tokenRates: TokenRates = DEFAULT_TOKEN_RATES,
   ) {}
 
   async listConversations(userId: string): Promise<ConversationRow[]> {
@@ -454,6 +463,10 @@ export class ChatService {
     const sqlOutcome = asRecord(upstreamDone.sql_outcome);
     const router = asRecord(upstreamDone.router);
     const model = asString(upstreamDone.model);
+    const routeConfidence = asNumber(router.confidence);
+    const costUsd = hasConfiguredPricing(this.tokenRates)
+      ? estimateCostUsd(promptTokens, completionTokens, this.tokenRates)
+      : null;
 
     const metadata: MessageMetadata = {
       answer_status: answerStatus,
@@ -468,6 +481,8 @@ export class ChatService {
       ...(retrieval ? { retrieval } : {}),
       ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
       ...(Object.keys(router).length > 0 ? { router } : {}),
+      ...(routeConfidence !== null ? { route_confidence: routeConfidence } : {}),
+      ...(costUsd !== null ? { cost_usd: costUsd } : {}),
       ...(failure ? { error_code: failure.code } : {}),
     };
 
@@ -532,6 +547,7 @@ export class ChatService {
         time_to_first_token_ms: timeToFirstTokenMs,
         aborted: false,
         persisted: messageId !== null,
+        ...(costUsd !== null ? { cost_usd: costUsd } : {}),
         ...(Object.keys(sqlOutcome).length > 0 ? { sql_outcome: sqlOutcome } : {}),
         ...(Object.keys(router).length > 0 ? { router } : {}),
       });

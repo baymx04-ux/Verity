@@ -16,6 +16,7 @@ from app.router.service import RoutedChatService
 from app.routers import chat, health, ingest
 from app.routers import schema as schema_router
 from app.sql.service import SqlChatService
+from app.tracing import build_trace_exporter
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -37,6 +38,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved
     app.state.started_at = time.monotonic()
     app.state.ingestion_service = build_ingestion_service(resolved)
+    trace_exporter = build_trace_exporter(resolved)
+    app.state.trace_exporter = trace_exporter
 
     llm = build_llm_client(resolved)
     embeddings = GoogleEmbeddingClient(resolved)
@@ -46,13 +49,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store=PostgresRetrievalStore(resolved),
         reranker=build_reranker(resolved),
     )
-    app.state.chat_service = ChatService(resolved, retrieval=retrieval, llm=llm)
-    app.state.sql_chat_service = SqlChatService(resolved, llm=llm, embeddings=embeddings)
+    app.state.chat_service = ChatService(
+        resolved, retrieval=retrieval, llm=llm, trace_exporter=trace_exporter
+    )
+    app.state.sql_chat_service = SqlChatService(
+        resolved, llm=llm, embeddings=embeddings, trace_exporter=trace_exporter
+    )
     app.state.hybrid_chat_service = HybridChatService(
         resolved,
         retrieval=retrieval,
         llm=llm,
         embeddings=embeddings,
+        trace_exporter=trace_exporter,
     )
     router_llm = llm
     if resolved.router_model and resolved.router_model != resolved.llm_model:
@@ -65,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sql=app.state.sql_chat_service,
         hybrid=app.state.hybrid_chat_service,
         router_llm=router_llm,
+        trace_exporter=trace_exporter,
     )
     # Expose embeddings client for the schema router
     app.state.embeddings_client = embeddings

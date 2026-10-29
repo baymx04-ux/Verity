@@ -62,6 +62,25 @@ def test_parse_decision_accepts_fenced_json_and_aliases() -> None:
     assert decision.reason == "leave policy"
 
 
+def test_parse_decision_salvages_truncated_payload() -> None:
+    decision = parse_decision(
+        '{"route":"documents","confidence":0.98,"reason":"Vacation policy for new'
+    )
+    assert decision is not None
+    assert decision.route == "documents"
+    assert decision.confidence == 0.98
+    assert decision.reason == "Vacation policy for new"
+
+
+def test_parse_decision_salvages_truncated_fenced_payload() -> None:
+    decision = parse_decision(
+        '```json\n{"route":"sql","confidence":0.91,"reason":"revenue by region'
+    )
+    assert decision is not None
+    assert decision.route == "sql"
+    assert decision.confidence == 0.91
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -98,7 +117,11 @@ class FakeDocuments:
         self.calls = 0
 
     async def stream(
-        self, request: ChatRequest, *, emit_route: bool = True
+        self,
+        request: ChatRequest,
+        *,
+        emit_route: bool = True,
+        trace: object = None,
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
         self.calls += 1
         yield "token", {"text": "document answer"}
@@ -118,7 +141,11 @@ class FakeHybrid:
         self.calls = 0
 
     async def stream(
-        self, request: ChatRequest, *, emit_route: bool = True
+        self,
+        request: ChatRequest,
+        *,
+        emit_route: bool = True,
+        trace: object = None,
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
         self.calls += 1
         yield "token", {"text": "hybrid answer"}

@@ -9,7 +9,7 @@ AI_PYTHON := $(VENV)/bin/python
 
 .PHONY: help env install up infra down clean ps logs build migrate seed seed-business \
 	seed-all catalog-refresh test test-node test-ai test-integration lint typecheck format \
-	format-check check verify-roles audit routing-eval
+	format-check check verify-roles audit routing-eval eval eval-validate
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -100,9 +100,11 @@ audit: ## Audit Node and Python dependencies
 	npm audit --audit-level=high
 	cd services/ai && .venv/bin/pip-audit -r requirements.txt
 
-eval: ## Run the evaluation harness (available from Phase 6)
-	@echo "The eval harness is implemented in Phase 6. Datasets live in evals/datasets/."
-	@exit 1
+eval: ## Run all Phase 6 evals against the running stack (throttled for free tiers)
+	$(AI_PYTHON) evals/run_evals.py --ai-url "$${AI_URL:-http://localhost:8000}"
+
+eval-validate: ## Validate eval datasets offline (no model calls)
+	$(AI_PYTHON) evals/run_evals.py --validate-only
 
 routing-eval: ## Measure router accuracy on evals/datasets/routing.jsonl (needs a model key)
 	$(AI_PYTHON) evals/run_routing.py

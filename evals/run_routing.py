@@ -78,6 +78,26 @@ def load_cases(path: Path) -> list[Case]:
     return cases
 
 
+class RateLimiter:
+    """Space classifier calls out so free-tier per-minute quotas are respected."""
+
+    def __init__(self, rpm: float) -> None:
+        self._interval = 60.0 / rpm if rpm > 0 else 0.0
+        self._next = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        if self._interval <= 0:
+            return
+        async with self._lock:
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            if self._next > now:
+                await asyncio.sleep(self._next - now)
+                now = loop.time()
+            self._next = now + self._interval
+
+
 async def predict(
     case: Case,
     *,
@@ -85,14 +105,26 @@ async def predict(
     llm: object,
     threshold: float,
     semaphore: asyncio.Semaphore,
+    limiter: RateLimiter,
+    attempts: int,
+    retry_delay: float,
 ) -> Prediction:
-    async with semaphore:
-        decision = await classify_route(
-            case.question,
-            history=case.history,
-            llm=llm,  # type: ignore[arg-type]
-            max_output_tokens=settings.router_max_output_tokens,
-        )
+    decision = None
+    for attempt in range(attempts):
+        async with semaphore:
+            await limiter.wait()
+            decision = await classify_route(
+                case.question,
+                history=case.history,
+                llm=llm,  # type: ignore[arg-type]
+                max_output_tokens=settings.router_max_output_tokens,
+            )
+        if decision.source == "model" or attempt == attempts - 1:
+            break
+        # A quota or transient provider error is indistinguishable from an
+        # invalid payload here; retry with backoff before recording a miss.
+        await asyncio.sleep(retry_delay * (2**attempt))
+    assert decision is not None
     fallback = decision.confidence < threshold
     return Prediction(
         case=case,
@@ -191,6 +223,7 @@ async def run(args: argparse.Namespace) -> int:
     llm = build_llm_client(llm_settings)
 
     semaphore = asyncio.Semaphore(max(1, args.concurrency))
+    limiter = RateLimiter(args.rpm)
     predictions = await asyncio.gather(
         *(
             predict(
@@ -199,6 +232,9 @@ async def run(args: argparse.Namespace) -> int:
                 llm=llm,
                 threshold=args.threshold,
                 semaphore=semaphore,
+                limiter=limiter,
+                attempts=max(1, args.attempts),
+                retry_delay=max(0.0, args.retry_delay),
             )
             for case in cases
         )
@@ -257,7 +293,25 @@ def main() -> None:
     parser.add_argument("--target", type=float, default=0.9, help="Required accuracy")
     parser.add_argument("--model", default="", help="Override the router model id")
     parser.add_argument(
-        "--concurrency", type=int, default=4, help="Parallel classifier calls"
+        "--concurrency", type=int, default=1, help="Parallel classifier calls"
+    )
+    parser.add_argument(
+        "--rpm",
+        type=float,
+        default=4.5,
+        help="Maximum classifier calls per minute (0 disables throttling)",
+    )
+    parser.add_argument(
+        "--attempts",
+        type=int,
+        default=2,
+        help="Tries per case when the classifier is unavailable",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=30.0,
+        help="Base seconds between classifier retries (doubles per attempt)",
     )
     args = parser.parse_args()
     raise SystemExit(asyncio.run(run(args)))

@@ -22,6 +22,7 @@ from app.rag.service import ChatService
 from app.router.classifier import RouteDecision, classify_route
 from app.router.hybrid import HybridChatService
 from app.sql.service import SqlChatService
+from app.tracing.base import TraceExporter
 
 logger = logging.getLogger(__name__)
 
@@ -45,19 +46,40 @@ class RoutedChatService:
         sql: SqlChatService,
         hybrid: HybridChatService,
         router_llm: LLMClient,
+        trace_exporter: TraceExporter | None = None,
     ) -> None:
         self._settings = settings
         self._documents = documents
         self._sql = sql
         self._hybrid = hybrid
         self._router_llm = router_llm
+        self._trace_exporter = trace_exporter
+
+    def _trace(self, request: ChatRequest) -> Trace:
+        trace = Trace(
+            exporter=self._trace_exporter,
+            redact_prompts=self._settings.trace_redact_prompts,
+        )
+        if request.trace_id:
+            trace.trace_id = request.trace_id
+        trace.set_user(str(request.access_context.user_id))
+        trace.set_input(request.question)
+        trace.add_tag("chat")
+        return trace
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatEvent]:
-        started = time.perf_counter()
-        requested = _requested_route(request.route)
-        trace = Trace(request.trace_id) if request.trace_id else Trace()
+        trace = self._trace(request)
         if request.trace_id is None:
             request = request.model_copy(update={"trace_id": trace.trace_id})
+        try:
+            async for event in self._stream(request, trace):
+                yield event
+        finally:
+            await trace.flush()
+
+    async def _stream(self, request: ChatRequest, trace: Trace) -> AsyncIterator[ChatEvent]:
+        started = time.perf_counter()
+        requested = _requested_route(request.route)
 
         decision: RouteDecision | None = None
         fallback = False
@@ -100,9 +122,14 @@ class RoutedChatService:
                     fallback,
                     decision.reason,
                 )
+            if decision is not None:
+                trace.set_metadata(route=routed, route_confidence=round(decision.confidence, 3))
+            else:
+                trace.set_metadata(route=routed)
             yield "route", _route_payload(routed, decision, fallback, reason)
         else:
             routed = requested
+            trace.set_metadata(route=routed)
             yield (
                 "route",
                 {
@@ -121,6 +148,7 @@ class RoutedChatService:
                 },
             )
             first_token_ms = int((time.perf_counter() - started) * 1000)
+            trace.set_output(OUT_OF_SCOPE_ANSWER)
             yield "token", {"text": OUT_OF_SCOPE_ANSWER}
             yield "sources", {"citations": []}
             yield "done", _out_of_scope_done(trace, decision, fallback, first_token_ms, started)
@@ -133,7 +161,7 @@ class RoutedChatService:
         }
         service = services[routed]
 
-        async for event, data in service.stream(request, emit_route=False):
+        async for event, data in service.stream(request, emit_route=False, trace=trace):
             if event == "done":
                 data = _merge_router_metadata(data, trace, decision, fallback, routed)
             yield event, data

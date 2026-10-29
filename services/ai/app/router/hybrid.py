@@ -26,6 +26,7 @@ from app.rag.types import AccessContext, RetrievalResult
 from app.router.hybrid_prompts import HYBRID_SYSTEM_PROMPT, build_hybrid_prompt
 from app.sql.pipeline import SqlPipelineResult, run_sql_pipeline
 from app.sql.synthesize import numeric_post_check, synthesize
+from app.tracing.base import TraceExporter
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +42,37 @@ class HybridChatService:
         llm: LLMClient,
         embeddings: GoogleEmbeddingClient,
         rewriter: QueryRewriter | None = None,
+        trace_exporter: TraceExporter | None = None,
     ) -> None:
         self._settings = settings
         self._retrieval = retrieval
         self._llm = llm
         self._embeddings = embeddings
         self._rewriter = rewriter or QueryRewriter(llm)
+        self._trace_exporter = trace_exporter
+
+    def _trace(self, request: ChatRequest) -> Trace:
+        trace = Trace(
+            exporter=self._trace_exporter,
+            redact_prompts=self._settings.trace_redact_prompts,
+        )
+        if request.trace_id:
+            trace.trace_id = request.trace_id
+        trace.set_user(str(request.access_context.user_id))
+        trace.set_input(request.question)
+        trace.set_metadata(route="hybrid")
+        trace.add_tag("hybrid")
+        return trace
 
     async def stream(
-        self, request: ChatRequest, *, emit_route: bool = True
+        self,
+        request: ChatRequest,
+        *,
+        emit_route: bool = True,
+        trace: Trace | None = None,
     ) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
-        trace = Trace(request.trace_id) if request.trace_id else Trace()
+        trace = trace or self._trace(request)
         access = AccessContext(
             user_id=str(request.access_context.user_id),
             role=request.access_context.role,
@@ -321,6 +341,12 @@ class HybridChatService:
             yield "token", {"text": fallback}
 
         answer = "".join(answer_parts)
+        trace.set_output(answer)
+        trace.set_metadata(
+            docs_status=doc_status,
+            sql_status=sql_status,
+            model=getattr(self._llm, "model", getattr(self._llm, "name", "unknown")),
+        )
         refused = not sql_ok and is_refusal_answer(answer)
         if refused:
             citations = []
@@ -397,7 +423,7 @@ class HybridChatService:
             "cited_indices": cited_indices or [],
             "citation_count": citation_count,
             "invalid_citation_count": invalid_citation_count,
-            "model": getattr(self._llm, "name", "unknown"),
+            "model": getattr(self._llm, "model", getattr(self._llm, "name", "unknown")),
             "sql_outcome": sql_outcome,
             "hybrid": {"documents": docs_status, "sql": sql_status},
         }

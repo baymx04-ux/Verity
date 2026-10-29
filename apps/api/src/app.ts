@@ -49,7 +49,10 @@ export function createApp({
 
   const storageService = new StorageService(config);
   const documentService = new DocumentService(pool, storageService, ai, ingestionQueue);
-  const chatService = new ChatService(pool, ai, logger);
+  const chatService = new ChatService(pool, ai, logger, {
+    inputPerMillion: config.LLM_INPUT_COST_PER_MILLION,
+    outputPerMillion: config.LLM_OUTPUT_COST_PER_MILLION,
+  });
 
   app.disable('x-powered-by');
   app.use(helmet());

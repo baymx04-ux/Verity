@@ -29,6 +29,8 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     EMBEDDING_MODEL: 'gemini-embedding-001',
     EMBEDDING_DIM: 768,
     RERANKER: 'none',
+    LLM_INPUT_COST_PER_MILLION: 0,
+    LLM_OUTPUT_COST_PER_MILLION: 0,
     UPLOAD_MAX_MB: 25,
     UPLOAD_RATE_LIMIT_PER_HOUR: 1000,
     JWT_ACCESS_SECRET: 'test-access-secret-32-characters-long!!',

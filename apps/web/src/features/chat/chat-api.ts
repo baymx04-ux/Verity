@@ -44,6 +44,8 @@ export interface MessageMetadata {
   time_to_first_token_ms?: number | null;
   retrieval?: { best_score?: number; candidates?: number };
   sql_outcome?: Record<string, unknown>;
+  route_confidence?: number | null;
+  cost_usd?: number;
   error_code?: string;
   [key: string]: unknown;
 }

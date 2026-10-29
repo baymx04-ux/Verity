@@ -68,7 +68,21 @@ class Settings(BaseSettings):
     router_enabled: bool = True
     router_model: str = ""
     router_confidence_threshold: float = 0.7
-    router_max_output_tokens: int = 160
+    router_max_output_tokens: int = 1024
+
+    langfuse_host: str = "http://langfuse:3000"
+    langfuse_public_key: SecretStr = SecretStr("")
+    langfuse_secret_key: SecretStr = SecretStr("")
+    langfuse_public_url: str = ""
+    langfuse_project_id: str = ""
+    langfuse_timeout_seconds: float = 3.0
+    trace_redact_prompts: bool = False
+
+    # Evaluation harness only. The gateway owns these values at runtime; they
+    # are duplicated here so `make eval` uses the same .env rates.
+    ai_service_url: str = "http://localhost:8000"
+    llm_input_cost_per_million: float = 0.0
+    llm_output_cost_per_million: float = 0.0
 
     chunk_tokens: int = 650
     chunk_overlap: int = 100

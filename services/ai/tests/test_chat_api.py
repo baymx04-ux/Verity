@@ -43,7 +43,9 @@ def chat_client(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> TestClie
         score=0.9,
     )
 
-    async def fake_retrieve(self: object, question: str, access: object) -> RetrievalResult:
+    async def fake_retrieve(
+        self: object, question: str, access: object, *, trace: object = None
+    ) -> RetrievalResult:
         return RetrievalResult(
             chunks=[chunk],
             citations=[citation],
@@ -127,7 +129,10 @@ def test_chat_stream_dispatches_sql_route(chat_client: TestClient) -> None:
     payload["route"] = "sql"
 
     async def fake_sql_stream(
-        request: object, *, emit_route: bool = True
+        request: object,
+        *,
+        emit_route: bool = True,
+        trace: object = None,
     ) -> AsyncIterator[tuple[str, dict[str, object]]]:
         if emit_route:
             yield "route", {"route": "sql"}

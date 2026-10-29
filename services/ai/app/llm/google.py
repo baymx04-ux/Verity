@@ -28,6 +28,10 @@ class GoogleLLMClient:
         self._model = settings.llm_model
         self._transport = transport
 
+    @property
+    def model(self) -> str:
+        return self._model
+
     async def stream(
         self,
         *,

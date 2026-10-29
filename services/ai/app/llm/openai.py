@@ -25,6 +25,10 @@ class OpenAICompatibleLLMClient:
         self._api_key = settings.openai_api_key.get_secret_value()
         self._model = settings.llm_model
         self._transport = transport
+
+    @property
+    def model(self) -> str:
+        return self._model
         if self.name == "ollama":
             self._base_url = f"{settings.ollama_base_url.rstrip('/')}/v1"
         else:

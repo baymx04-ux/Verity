@@ -235,7 +235,7 @@ ones; the remainder use the defaults shown.
 | `ROUTER_ENABLED`              | `true`                 | Apply automatic intent routing                  |
 | `ROUTER_MODEL`                | empty                  | Router model; empty reuses `LLM_MODEL`          |
 | `ROUTER_CONFIDENCE_THRESHOLD` | `0.7`                  | Below this, use the hybrid route (D9)           |
-| `ROUTER_MAX_OUTPUT_TOKENS`    | `160`                  | Classifier output cap                           |
+| `ROUTER_MAX_OUTPUT_TOKENS`    | `1024`                 | Classifier output cap (includes reasoning)      |
 
 The gateway limits chat streams separately with `CHAT_RATE_LIMIT_PER_MIN`
 (default 20 per user per minute).
@@ -266,8 +266,10 @@ and defaults the composer to Auto mode.
 
 Routing quality is measured with `make routing-eval`, which runs
 `evals/datasets/routing.jsonl` through the same classifier and threshold and
-writes `evals/reports/routing.md`. The report distinguishes classifier failures
-from genuine misroutes; a run with failed calls is marked incomplete.
+writes `evals/reports/routing.md`. The harness throttles to 4.5 calls per minute
+and retries unavailable calls so free-tier quotas do not corrupt the measurement;
+use `--rpm 0` for unthrottled paid keys. The report distinguishes classifier
+failures from genuine misroutes; a run with failed calls is marked incomplete.
 
 ## 11. Verification status
 

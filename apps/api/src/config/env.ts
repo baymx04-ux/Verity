@@ -41,6 +41,11 @@ const envSchema = z.object({
   RERANKER: z.enum(['cohere', 'local', 'none', 'google']).default('none'),
   COHERE_API_KEY: z.string().optional(),
 
+  // USD per one million tokens. Leave at 0 when you do not want cost estimates;
+  // the dashboard labels these values as estimates and never implies billing.
+  LLM_INPUT_COST_PER_MILLION: z.coerce.number().min(0).default(0),
+  LLM_OUTPUT_COST_PER_MILLION: z.coerce.number().min(0).default(0),
+
   UPLOAD_MAX_MB: z.coerce.number().int().positive().default(25),
   UPLOAD_RATE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(10),
 

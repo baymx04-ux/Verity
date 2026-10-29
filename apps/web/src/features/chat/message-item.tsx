@@ -47,6 +47,8 @@ export function MessageItem({
   );
   const [feedbackComment, setFeedbackComment] = useState(message.feedback?.comment ?? '');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
   const handleCopy = async () => {
     try {
@@ -59,20 +61,41 @@ export function MessageItem({
   };
 
   const handleVote = async (rating: 1 | -1) => {
+    const previousRating = feedbackRating;
     setFeedbackRating(rating);
+    setIsSubmittingFeedback(true);
+    setFeedbackError(null);
+    setFeedbackNotice(null);
     try {
       await onFeedback(message.id, rating, feedbackComment || undefined);
-    } catch {
-      // ignore
+      setFeedbackNotice('Feedback saved');
+    } catch (error) {
+      setFeedbackRating(previousRating);
+      setFeedbackError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Feedback could not be saved. Check your connection and try again.',
+      );
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
   const handleSaveComment = async () => {
     if (!feedbackRating) return;
     setIsSubmittingFeedback(true);
+    setFeedbackError(null);
+    setFeedbackNotice(null);
     try {
       await onFeedback(message.id, feedbackRating, feedbackComment);
+      setFeedbackNotice('Comment saved');
       setCommentDialogOpen(false);
+    } catch (error) {
+      setFeedbackError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Your comment could not be saved. Please try again.',
+      );
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -261,6 +284,8 @@ export function MessageItem({
             size="sm"
             variant="subtle"
             aria-label="Helpful answer"
+            aria-pressed={feedbackRating === 1}
+            disabled={isSubmittingFeedback}
             onClick={() => handleVote(1)}
             className={feedbackRating === 1 ? 'text-emerald-700 bg-emerald-50' : ''}
           >
@@ -270,6 +295,8 @@ export function MessageItem({
             size="sm"
             variant="subtle"
             aria-label="Unhelpful answer"
+            aria-pressed={feedbackRating === -1}
+            disabled={isSubmittingFeedback}
             onClick={() => handleVote(-1)}
             className={feedbackRating === -1 ? 'text-rose-700 bg-rose-50' : ''}
           >
@@ -278,12 +305,24 @@ export function MessageItem({
           {feedbackRating !== null && (
             <button
               type="button"
-              onClick={() => setCommentDialogOpen(true)}
+              onClick={() => {
+                setFeedbackError(null);
+                setCommentDialogOpen(true);
+              }}
               className="text-[11px] text-ink-500 hover:text-ink-700 underline underline-offset-2 ml-1"
             >
               {feedbackComment ? 'Edit comment' : 'Add comment'}
             </button>
           )}
+          {feedbackError ? (
+            <span role="alert" className="ml-1 max-w-[22rem] text-[11px] text-rose-700">
+              {feedbackError}
+            </span>
+          ) : feedbackNotice ? (
+            <span role="status" className="ml-1 text-[11px] text-verified-text">
+              {feedbackNotice}
+            </span>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
@@ -347,8 +386,18 @@ export function MessageItem({
               rows={3}
             />
           </div>
+          {feedbackError ? (
+            <p role="alert" className="rounded-control border border-danger-border bg-danger-bg px-3 py-2 text-body-sm text-danger-text">
+              {feedbackError}
+            </p>
+          ) : null}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" size="sm" onClick={() => setCommentDialogOpen(false)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCommentDialogOpen(false)}
+              disabled={isSubmittingFeedback}
+            >
               Cancel
             </Button>
             <Button
@@ -357,7 +406,7 @@ export function MessageItem({
               onClick={handleSaveComment}
               disabled={isSubmittingFeedback}
             >
-              Save Feedback
+              {isSubmittingFeedback ? 'Saving…' : 'Save feedback'}
             </Button>
           </div>
         </div>

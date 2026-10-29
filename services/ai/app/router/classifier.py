@@ -73,7 +73,7 @@ async def classify_route(
     *,
     history: list[dict[str, str]],
     llm: LLMClient,
-    max_output_tokens: int = 160,
+    max_output_tokens: int = 1024,
 ) -> RouteDecision:
     """Ask the classifier model for a structured route decision."""
 
@@ -127,7 +127,10 @@ def parse_decision(raw: str) -> RouteDecision | None:
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError:
-        return None
+        # Some models spend their output budget on reasoning tokens and stop
+        # mid-object. Salvage the fields we need instead of discarding a route
+        # the model already committed to.
+        data = _salvage_decision(cleaned)
     if not isinstance(data, dict):
         return None
 
@@ -141,6 +144,31 @@ def parse_decision(raw: str) -> RouteDecision | None:
     confidence = min(1.0, max(0.0, confidence))
     reason = " ".join(str(data.get("reason", "")).split())[:240]
     return RouteDecision(route=route, confidence=confidence, reason=reason)
+
+
+def _salvage_decision(raw: str) -> dict[str, object] | None:
+    """Extract route fields from a truncated JSON object.
+
+    A complete response is parsed normally; this only runs when the payload is
+    incomplete. The route must still be valid, so a partial reason cannot turn
+    an unknown answer into a route.
+    """
+
+    route_match = re.search(r'"route"\s*:\s*"([^"]+)"', raw)
+    if not route_match:
+        return None
+    confidence_match = re.search(r'"confidence"\s*:\s*(-?\d+(?:\.\d+)?)', raw)
+    reason_match = re.search(r'"reason"\s*:\s*"((?:[^"\\]|\\.)*)', raw)
+    reason = reason_match.group(1) if reason_match else ""
+    try:
+        reason = json.loads(f'"{reason}"')
+    except json.JSONDecodeError:
+        pass
+    return {
+        "route": route_match.group(1),
+        "confidence": confidence_match.group(1) if confidence_match else 0.0,
+        "reason": reason,
+    }
 
 
 def _normalize_route(value: str) -> Route | None:

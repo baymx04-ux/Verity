@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from contextlib import nullcontext
 from dataclasses import replace
 from typing import Protocol
 
@@ -11,6 +12,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from app.core.config import Settings
+from app.core.tracing import Trace
 from app.ingestion.embeddings import GoogleEmbeddingClient
 from app.rag.rerank import Reranker, build_citations
 from app.rag.types import AccessContext, RetrievalResult, RetrievedChunk
@@ -224,26 +226,35 @@ class RetrievalService:
         self._store = store
         self._reranker = reranker
 
-    async def retrieve(self, question: str, access: AccessContext) -> RetrievalResult:
+    async def retrieve(
+        self,
+        question: str,
+        access: AccessContext,
+        *,
+        trace: Trace | None = None,
+    ) -> RetrievalResult:
         started = time.perf_counter()
         embedding: list[float] | None = None
         try:
-            embedding = await self._embeddings.embed_query(question)
+            with trace.span("retrieval_embedding") if trace is not None else nullcontext():
+                embedding = await self._embeddings.embed_query(question)
         except Exception as exc:  # FTS remains useful if embeddings are down
             logger.warning("query embedding failed; using keyword retrieval only: %s", exc)
         embedding_ms = int((time.perf_counter() - started) * 1000)
 
         search_started = time.perf_counter()
-        vector_results, keyword_results = await self._store.search(
-            question=question,
-            embedding=embedding,
-            access=access,
-            limit=max(1, self._settings.retrieve_top_k),
-        )
+        with trace.span("retrieval_search") if trace is not None else nullcontext():
+            vector_results, keyword_results = await self._store.search(
+                question=question,
+                embedding=embedding,
+                access=access,
+                limit=max(1, self._settings.retrieve_top_k),
+            )
         search_ms = int((time.perf_counter() - search_started) * 1000)
 
         fusion_started = time.perf_counter()
-        fused = fuse_rrf(vector_results, keyword_results)
+        with trace.span("retrieval_fusion") if trace is not None else nullcontext():
+            fused = fuse_rrf(vector_results, keyword_results)
         fusion_ms = int((time.perf_counter() - fusion_started) * 1000)
 
         spans = {
@@ -266,11 +277,12 @@ class RetrievalService:
         )
         candidates = fused[:candidate_limit]
         rerank_started = time.perf_counter()
-        reranked = await self._reranker.rerank(
-            question,
-            candidates,
-            top_n=max(1, self._settings.rerank_top_n),
-        )
+        with trace.span("retrieval_rerank") if trace is not None else nullcontext():
+            reranked = await self._reranker.rerank(
+                question,
+                candidates,
+                top_n=max(1, self._settings.rerank_top_n),
+            )
         spans["retrieval_rerank"] = int((time.perf_counter() - rerank_started) * 1000)
 
         best_score = reranked[0].score if reranked else 0.0

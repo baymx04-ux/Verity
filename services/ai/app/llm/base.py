@@ -22,6 +22,7 @@ class LLMDelta:
 
 class LLMClient(Protocol):
     name: str
+    model: str
 
     def stream(
         self,

@@ -115,6 +115,33 @@ describe('MessageItem citations', () => {
     expect(screen.queryByText('Insufficient document evidence')).not.toBeInTheDocument();
   });
 
+  it('shows a saved acknowledgement after feedback succeeds', async () => {
+    const onFeedback = vi.fn(async () => undefined);
+    renderMessage(assistantMessage(), { onFeedback });
+
+    const helpful = screen.getByRole('button', { name: 'Helpful answer' });
+    await userEvent.click(helpful);
+
+    expect(onFeedback).toHaveBeenCalledWith('message-1', 1, undefined);
+    expect(await screen.findByRole('status')).toHaveTextContent('Feedback saved');
+    expect(helpful).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('rolls back the vote and explains a feedback failure', async () => {
+    const onFeedback = vi.fn(async () => {
+      throw new Error('Feedback service is unavailable.');
+    });
+    renderMessage(assistantMessage(), { onFeedback });
+
+    const unhelpful = screen.getByRole('button', { name: 'Unhelpful answer' });
+    await userEvent.click(unhelpful);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Feedback service is unavailable.',
+    );
+    expect(unhelpful).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('copies the answer and exposes regenerate on the latest answer', async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal('navigator', { clipboard: { writeText } });

@@ -32,6 +32,7 @@ from app.rag.rewrite import QueryRewriter
 from app.sql.execute import ExecutionResult
 from app.sql.pipeline import run_sql_pipeline
 from app.sql.synthesize import numeric_post_check, synthesize
+from app.tracing.base import TraceExporter
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +46,36 @@ class SqlChatService:
         *,
         llm: LLMClient,
         embeddings: GoogleEmbeddingClient,
+        trace_exporter: TraceExporter | None = None,
     ) -> None:
         self._settings = settings
         self._llm = llm
         self._embeddings = embeddings
         self._rewriter = QueryRewriter(llm)
+        self._trace_exporter = trace_exporter
+
+    def _trace(self, request: ChatRequest) -> Trace:
+        trace = Trace(
+            exporter=self._trace_exporter,
+            redact_prompts=self._settings.trace_redact_prompts,
+        )
+        if request.trace_id:
+            trace.trace_id = request.trace_id
+        trace.set_user(str(request.access_context.user_id))
+        trace.set_input(request.question)
+        trace.set_metadata(route="sql")
+        trace.add_tag("sql")
+        return trace
 
     async def stream(
-        self, request: ChatRequest, *, emit_route: bool = True
+        self,
+        request: ChatRequest,
+        *,
+        emit_route: bool = True,
+        trace: Trace | None = None,
     ) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
-        trace = Trace(request.trace_id) if request.trace_id else Trace()
+        trace = trace or self._trace(request)
 
         yield "status", {"stage": "routing", "message": "Preparing the data query…"}
         if emit_route:
@@ -182,6 +202,12 @@ class SqlChatService:
             answer_parts.append(fallback)
 
         answer = "".join(answer_parts)
+        trace.set_output(answer)
+        trace.set_metadata(
+            answer_status="answered",
+            row_count=execution.row_count,
+            model=getattr(self._llm, "model", getattr(self._llm, "name", "unknown")),
+        )
         numeric_check = numeric_post_check(answer, execution.rows)
 
         yield "sources", {"citations": []}
@@ -225,7 +251,7 @@ class SqlChatService:
             "spans": trace.summary(),
             "low_confidence": False,
             "answer_status": answer_status,
-            "model": getattr(self._llm, "name", "unknown"),
+            "model": getattr(self._llm, "model", getattr(self._llm, "name", "unknown")),
             "sql_outcome": sql_outcome,
         }
 

@@ -22,6 +22,7 @@ from app.rag.prompts import (
 from app.rag.retrieval import RetrievalService
 from app.rag.rewrite import QueryRewriter
 from app.rag.types import AccessContext
+from app.tracing.base import TraceExporter
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,37 @@ class ChatService:
         retrieval: RetrievalService,
         llm: LLMClient,
         rewriter: QueryRewriter | None = None,
+        trace_exporter: TraceExporter | None = None,
     ) -> None:
         self._settings = settings
         self._retrieval = retrieval
         self._llm = llm
         self._rewriter = rewriter or QueryRewriter(llm)
+        self._trace_exporter = trace_exporter
+
+    def _trace(self, request: ChatRequest) -> Trace:
+        trace = Trace(
+            exporter=self._trace_exporter,
+            redact_prompts=self._settings.trace_redact_prompts,
+        )
+        if request.trace_id:
+            trace.trace_id = request.trace_id
+        trace.set_user(str(request.access_context.user_id))
+        trace.set_input(request.question)
+        trace.set_metadata(route="documents")
+        trace.add_tag("documents")
+        return trace
 
     async def stream(
-        self, request: ChatRequest, *, emit_route: bool = True
+        self,
+        request: ChatRequest,
+        *,
+        emit_route: bool = True,
+        trace: Trace | None = None,
     ) -> AsyncIterator[ChatEvent]:
         started = time.perf_counter()
         first_token_ms: int | None = None
-        trace = Trace(request.trace_id) if request.trace_id else Trace()
+        trace = trace or self._trace(request)
         access = AccessContext(
             user_id=str(request.access_context.user_id),
             role=request.access_context.role,
@@ -78,7 +98,7 @@ class ChatService:
 
         try:
             with trace.span("retrieval"):
-                result = await self._retrieval.retrieve(question, access)
+                result = await self._retrieval.retrieve(question, access, trace=trace)
         except Exception as exc:
             logger.exception("retrieval failed trace_id=%s: %s", trace.trace_id, exc)
             yield (
@@ -115,7 +135,7 @@ class ChatService:
                     "cited_indices": [],
                     "citation_count": 0,
                     "invalid_citation_count": 0,
-                    "model": getattr(self._llm, "name", "unknown"),
+                    "model": getattr(self._llm, "model", getattr(self._llm, "name", "unknown")),
                     "retrieval": {
                         "best_score": round(result.best_score, 4),
                         "candidates": len(result.chunks),
@@ -189,6 +209,15 @@ class ChatService:
             return
 
         answer = "".join(answer_parts)
+        trace.set_output(answer)
+        trace.set_metadata(
+            answer_status="refused" if is_refusal_answer(answer) else "answered",
+            citation_count=len(citations),
+            invalid_citation_count=citation_filter.dropped_count,
+        )
+        model = getattr(self._llm, "model", None)
+        if model:
+            trace.set_metadata(model=str(model))
         cited_indices = sorted(citation_filter.cited)
         refused = is_refusal_answer(answer)
         low_confidence = refused or not cited_indices
