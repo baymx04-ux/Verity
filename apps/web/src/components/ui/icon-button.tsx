@@ -11,8 +11,9 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<IconButtonVariant, string> = {
   ghost: 'text-ink-500 hover:bg-inset hover:text-ink-900',
-  secondary: 'border border-line bg-surface text-ink-700 shadow-xs hover:bg-inset',
-  subtle: 'bg-surface-container-low text-ink-700 hover:bg-surface-container',
+  secondary:
+    'border border-line bg-surface text-ink-600 shadow-xs hover:border-line-strong hover:bg-surface-hover hover:text-ink-900',
+  subtle: 'bg-surface-container-low text-ink-600 hover:bg-surface-container-high hover:text-ink-900',
 };
 
 const sizeStyles: Record<IconButtonSize, string> = {
@@ -25,7 +26,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
     <button
       ref={ref}
       type={type}
-      className={`inline-flex shrink-0 items-center justify-center rounded-control transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-control transition-fluid disabled:cursor-not-allowed disabled:opacity-50 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       {...props}
     />
   ),

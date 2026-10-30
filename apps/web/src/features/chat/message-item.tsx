@@ -4,14 +4,12 @@ import {
   Copy,
   FileSearch,
   RotateCcw,
-  ShieldCheck,
-  Sparkles,
   ThumbsDown,
   ThumbsUp,
   User,
 } from 'lucide-react';
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { SqlPanel, type SqlResult } from '../../components/sql/SqlPanel';
@@ -21,7 +19,32 @@ import { Dialog } from '../../components/ui/dialog';
 import { IconButton } from '../../components/ui/icon-button';
 import { Textarea } from '../../components/ui/textarea';
 import type { ChatMessage, Citation, SqlResultPreview } from './chat-api';
-import { CitationChip } from './citation-chip';
+
+const CITATION_HREF_PATTERN = /^#citation-(\d{1,3})$/;
+
+function formatLatency(value: number): string {
+  return value >= 1000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
+}
+
+/**
+ * Turn inline citation markers such as `[1]` into Markdown links so the
+ * whole answer can be parsed as a single document. Splitting the text before
+ * parsing broke block structure (lists, headings, paragraphs) and pushed the
+ * citation chips onto their own lines.
+ */
+function linkCitationMarkers(content: string): string {
+  return content
+    .split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g)
+    .map((segment, index) =>
+      index % 2 === 1
+        ? segment
+        : segment.replace(
+            /\[(\d{1,3})\]/g,
+            (_match, digit: string) => `[${digit}](#citation-${digit})`,
+          ),
+    )
+    .join('');
+}
 
 interface MessageItemProps {
   message: ChatMessage;
@@ -101,71 +124,135 @@ export function MessageItem({
     }
   };
 
-  const renderContent = (content: string, citations: Citation[]) => {
-    // Regex splits text into plain parts and [1], [2], etc.
-    const parts = content.split(/(\[\d{1,3}\])/g);
+  const renderCitationChip = (citeIndex: number) => {
+    const citation: Citation | undefined = message.citations?.[citeIndex - 1];
+    const title = citation?.title
+      ? `${citation.title}${citation.page ? ` · p. ${citation.page}` : ''}`
+      : `Source ${citeIndex}`;
+    const isSelected = selectedCitationIndex === citeIndex - 1;
 
     return (
-      <div className="prose prose-slate max-w-none text-body-md text-slate-800 leading-relaxed">
-        {parts.map((part, index) => {
-          const match = part.match(/^\[(\d{1,3})\]$/);
-          const rawDigit = match?.[1];
-          if (rawDigit) {
-            const citeIndex = parseInt(rawDigit, 10);
-            const citation = citations[citeIndex - 1];
-            return (
-              <span key={index} className="inline-block mx-0.5 align-baseline">
-                <CitationChip
-                  index={citeIndex}
-                  citation={citation}
-                  isSelected={selectedCitationIndex === citeIndex - 1}
-                  onClick={() => onSelectCitation(citeIndex - 1)}
-                />
-              </span>
-            );
-          }
-
-          return (
-            <ReactMarkdown
-              key={index}
-              remarkPlugins={[remarkGfm]}
-              components={{
-                p: ({ children }) => <span className="inline">{children}</span>,
-              }}
-            >
-              {part}
-            </ReactMarkdown>
-          );
-        })}
-      </div>
+      <button
+        type="button"
+        title={title}
+        aria-pressed={isSelected}
+        onClick={() => onSelectCitation(citeIndex - 1)}
+        className={`mx-0.5 inline-flex items-center rounded-[5px] border px-1.5 py-0.5 align-middle font-mono text-[10px] font-medium leading-none transition-fluid ${
+          isSelected
+            ? 'border-action bg-action text-white shadow-xs'
+            : 'border-action-border bg-action-tint text-action hover:bg-action-border/60'
+        }`}
+      >
+        [{citeIndex}]
+      </button>
     );
   };
 
+  const markdownComponents: Components = {
+    a: ({ href, children }) => {
+      const citationMatch = href?.match(CITATION_HREF_PATTERN);
+      if (citationMatch?.[1]) {
+        return renderCitationChip(parseInt(citationMatch[1], 10));
+      }
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium text-action underline underline-offset-2"
+        >
+          {children}
+        </a>
+      );
+    },
+    p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+    ul: ({ children }) => (
+      <ul className="my-2 list-disc space-y-1 pl-5 marker:text-ink-400">{children}</ul>
+    ),
+    ol: ({ children }) => (
+      <ol className="my-2 list-decimal space-y-1 pl-5 marker:text-ink-400">{children}</ol>
+    ),
+    li: ({ children }) => <li className="pl-0.5">{children}</li>,
+    h1: ({ children }) => (
+      <h1 className="mb-2 mt-4 text-display-sm font-semibold text-ink-900 first:mt-0">
+        {children}
+      </h1>
+    ),
+    h2: ({ children }) => (
+      <h2 className="mb-2 mt-4 text-display-sm font-semibold text-ink-900 first:mt-0">
+        {children}
+      </h2>
+    ),
+    h3: ({ children }) => (
+      <h3 className="mb-1.5 mt-3 text-label-md font-semibold text-ink-900 first:mt-0">
+        {children}
+      </h3>
+    ),
+    h4: ({ children }) => (
+      <h4 className="mb-1 mt-3 font-semibold text-ink-900 first:mt-0">{children}</h4>
+    ),
+    strong: ({ children }) => <strong className="font-semibold text-ink-900">{children}</strong>,
+    code: ({ children }) => (
+      <code className="rounded-[4px] border border-line bg-canvas-subtle px-1 py-0.5 font-mono text-[0.8125rem] text-ink-900">
+        {children}
+      </code>
+    ),
+    pre: ({ children }) => (
+      <pre className="my-3 overflow-x-auto rounded-nested border border-line bg-ink-900 p-3.5 font-mono text-[0.8125rem] leading-relaxed text-white shadow-inset [&_code]:border-0 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-white">
+        {children}
+      </pre>
+    ),
+    blockquote: ({ children }) => (
+      <blockquote className="my-3 border-l-2 border-line-strong pl-3 text-ink-500">
+        {children}
+      </blockquote>
+    ),
+    hr: () => <hr className="my-4 border-line" />,
+    table: ({ children }) => (
+      <div className="my-3 overflow-x-auto">
+        <table className="w-full border-collapse text-body-sm">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => (
+      <th className="border border-line bg-surface-container-low px-2 py-1 text-left font-semibold text-ink-900">
+        {children}
+      </th>
+    ),
+    td: ({ children }) => <td className="border border-line px-2 py-1 align-top">{children}</td>,
+  };
+
+  const renderContent = (content: string) => (
+    <div className="text-body-md leading-relaxed text-ink-900">
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {linkCitationMarkers(content)}
+      </ReactMarkdown>
+    </div>
+  );
+
   if (message.role === 'user') {
     return (
-      <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs transition-fluid hover:border-slate-300 sm:p-5">
-        <header className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs text-ink-500">
-          <div className="flex items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-slate-700">
-              <User className="size-3.5" aria-hidden="true" />
+      <article className="rounded-card border border-line bg-surface shadow-card transition-fluid">
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-ink-900 text-white">
+              <User className="size-3" aria-hidden="true" />
             </span>
-            <span className="font-medium text-slate-700">{userEmail || 'You'}</span>
+            <span className="truncate text-label-md font-semibold text-ink-900">
+              {userEmail || 'You'}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="neutral">Question</Badge>
-            <time className="text-[11px] text-ink-400">
-              {new Date(message.created_at).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-            </time>
-          </div>
+          <time className="shrink-0 font-mono text-[10px] text-ink-400">
+            {new Date(message.created_at).toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </time>
         </header>
 
-        <div className="mt-3">
-          <h3 className="font-display text-display-sm text-slate-900 font-semibold leading-snug">
+        <div className="px-4 py-3.5">
+          <p className="whitespace-pre-wrap text-body-md leading-relaxed text-ink-800">
             {message.content}
-          </h3>
+          </p>
         </div>
       </article>
     );
@@ -206,79 +293,88 @@ export function MessageItem({
           : message.route === 'out_of_scope'
             ? 'Out of scope'
             : message.route;
-  const routeBadge =
-    message.route === 'documents'
-      ? 'info'
-      : message.route === 'sql'
-        ? 'live'
-        : message.route === 'hybrid'
-          ? 'analyst'
-          : 'warning';
 
   return (
-    <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs transition-fluid sm:p-5">
-      <header className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs text-ink-500">
-        <div className="flex items-center gap-2">
-          <span className="flex size-6 items-center justify-center rounded-full bg-sky-50 text-sky-600">
-            <Sparkles className="size-3.5" aria-hidden="true" />
-          </span>
-          <span className="font-semibold text-slate-800">Verity</span>
-          <span className="text-slate-300">•</span>
+    <article className="rounded-card border border-line bg-surface shadow-card transition-fluid">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <img
+            src="/verity-logo.png"
+            alt=""
+            className="size-6 rounded-[7px] border border-line bg-surface object-contain shadow-xs"
+          />
+          <span className="text-label-md font-semibold text-ink-900">Verity</span>
+          <span aria-hidden="true" className="h-3 w-px bg-line-strong" />
           <span
-            className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] font-medium ${
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] ${
               isAborted || isError
-                ? 'border-amber-200/60 bg-amber-50 text-amber-700'
-                : 'border-emerald-200/60 bg-emerald-50 text-emerald-700'
+                ? 'border-danger-border bg-danger-bg text-danger-text'
+                : 'border-verified-border bg-verified-bg text-verified-text'
             }`}
           >
-            <ShieldCheck className="size-3" aria-hidden="true" />
+            <span
+              aria-hidden="true"
+              className={`size-1.5 rounded-full ${isAborted || isError ? 'bg-danger' : 'bg-verified'}`}
+            />
             {answerLabel}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {message.route && <Badge variant={routeBadge}>{routeLabel}</Badge>}
-          {message.latency_ms && (
-            <span className="hidden items-center gap-1 text-[11px] font-mono text-ink-400 sm:inline-flex">
-              <Clock className="size-3" aria-hidden="true" />
-              {message.latency_ms}ms
-            </span>
+          {message.route && (
+            <Badge
+              variant={
+                message.route === 'documents'
+                  ? 'info'
+                  : message.route === 'sql'
+                    ? 'live'
+                    : message.route === 'hybrid'
+                      ? 'analyst'
+                      : 'neutral'
+              }
+            >
+              {routeLabel}
+            </Badge>
           )}
+          {message.latency_ms ? (
+            <span className="hidden items-center gap-1 font-mono text-[10px] text-ink-400 sm:inline-flex">
+              <Clock className="size-3" aria-hidden="true" />
+              {formatLatency(message.latency_ms)}
+            </span>
+          ) : null}
         </div>
       </header>
 
-      <div className="mt-3">
+      <div className="px-4 py-4 sm:px-5">
         {isRefusal ? (
-          <div className="rounded-md border border-amber-200 bg-amber-50/60 p-3.5 text-body-md text-amber-900 flex items-start gap-2.5">
-            <FileSearch className="size-5 shrink-0 text-amber-600 mt-0.5" aria-hidden="true" />
+          <div className="flex items-start gap-3 rounded-nested border border-warning-border bg-warning-bg/60 p-3.5 text-body-sm text-warning-text">
+            <FileSearch className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden="true" />
             <div>
-              <p className="font-medium text-amber-900">Insufficient document evidence</p>
-              <p className="mt-0.5 text-body-sm text-amber-800 leading-relaxed">
-                {message.content}
-              </p>
+              <p className="font-semibold text-warning">Insufficient document evidence</p>
+              <p className="mt-1 leading-relaxed text-warning-text/90">{message.content}</p>
             </div>
           </div>
         ) : (
-          renderContent(message.content, message.citations || [])
+          renderContent(message.content)
         )}
         {isAborted && (
-          <p className="mt-2 text-[11px] text-amber-700">
+          <p className="mt-2 text-[11px] text-warning-text">
             Generation was stopped. The partial answer above was saved.
           </p>
         )}
         {isError && (
-          <p className="mt-2 text-[11px] text-amber-700">
+          <p className="mt-2 text-[11px] text-warning-text">
             Generation failed before the answer completed.
           </p>
         )}
         {isClarification && (
-          <p className="mt-2 text-[11px] text-sky-700">
+          <p className="mt-2 text-[11px] text-action">
             Tell Verity which metric, date range, or segment you mean and ask again.
           </p>
         )}
         {sqlResult ? <SqlPanel result={sqlResult} /> : null}
       </div>
 
-      <footer className="mt-4 flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-100 text-xs text-ink-500">
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5 text-[10px] text-ink-400">
         <div className="flex items-center gap-1.5">
           <IconButton
             size="sm"
@@ -287,7 +383,7 @@ export function MessageItem({
             aria-pressed={feedbackRating === 1}
             disabled={isSubmittingFeedback}
             onClick={() => handleVote(1)}
-            className={feedbackRating === 1 ? 'text-emerald-700 bg-emerald-50' : ''}
+            className={feedbackRating === 1 ? 'bg-verified-bg text-verified-text' : ''}
           >
             <ThumbsUp className="size-3.5" aria-hidden="true" />
           </IconButton>
@@ -298,7 +394,7 @@ export function MessageItem({
             aria-pressed={feedbackRating === -1}
             disabled={isSubmittingFeedback}
             onClick={() => handleVote(-1)}
-            className={feedbackRating === -1 ? 'text-rose-700 bg-rose-50' : ''}
+            className={feedbackRating === -1 ? 'bg-danger-bg text-danger-text' : ''}
           >
             <ThumbsDown className="size-3.5" aria-hidden="true" />
           </IconButton>
@@ -309,17 +405,17 @@ export function MessageItem({
                 setFeedbackError(null);
                 setCommentDialogOpen(true);
               }}
-              className="text-[11px] text-ink-500 hover:text-ink-700 underline underline-offset-2 ml-1"
+              className="text-[10px] text-ink-500 hover:text-ink-900 underline underline-offset-2 ml-1"
             >
               {feedbackComment ? 'Edit comment' : 'Add comment'}
             </button>
           )}
           {feedbackError ? (
-            <span role="alert" className="ml-1 max-w-[22rem] text-[11px] text-rose-700">
+            <span role="alert" className="ml-1 max-w-[22rem] text-[10px] text-danger-text">
               {feedbackError}
             </span>
           ) : feedbackNotice ? (
-            <span role="status" className="ml-1 text-[11px] text-verified-text">
+            <span role="status" className="ml-1 text-[10px] text-verified-text">
               {feedbackNotice}
             </span>
           ) : null}
@@ -335,7 +431,7 @@ export function MessageItem({
             <button
               type="button"
               onClick={onRegenerate}
-              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
+              className="inline-flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-[10px] text-ink-500 transition-fluid hover:bg-inset hover:text-ink-900"
             >
               <RotateCcw className="size-3" aria-hidden="true" />
               <span>Regenerate</span>
@@ -344,12 +440,12 @@ export function MessageItem({
           <button
             type="button"
             onClick={handleCopy}
-            className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
+            className="inline-flex items-center gap-1.5 rounded-[6px] px-2 py-1 text-[10px] text-ink-500 transition-fluid hover:bg-inset hover:text-ink-900"
           >
             {copied ? (
               <>
-                <Check className="size-3 text-emerald-600" aria-hidden="true" />
-                <span className="text-emerald-700">Copied</span>
+                <Check className="size-3 text-verified" aria-hidden="true" />
+                <span className="text-verified-text">Copied</span>
               </>
             ) : (
               <>
@@ -387,7 +483,10 @@ export function MessageItem({
             />
           </div>
           {feedbackError ? (
-            <p role="alert" className="rounded-control border border-danger-border bg-danger-bg px-3 py-2 text-body-sm text-danger-text">
+            <p
+              role="alert"
+              className="rounded-[8px] border border-danger-border bg-danger-bg px-3 py-2 text-body-sm text-danger-text"
+            >
               {feedbackError}
             </p>
           ) : null}

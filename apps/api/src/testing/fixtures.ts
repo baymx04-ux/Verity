@@ -43,6 +43,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     COOKIE_SAME_SITE: 'lax',
     AUTH_RATE_LIMIT_PER_MIN: 1000,
     CHAT_RATE_LIMIT_PER_MIN: 1000,
+    ADMIN_RATE_LIMIT_PER_MIN: 1000,
     databaseUrl: 'postgresql://verity_app:test-password@localhost:5432/verity',
     minioUrl: 'http://localhost:9000',
     isProduction: false,

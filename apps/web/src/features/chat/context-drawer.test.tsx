@@ -33,7 +33,8 @@ describe('ContextDrawer', () => {
     expect(screen.getByText('Employee Handbook')).toBeInTheDocument();
     expect(screen.getByText(/p\.5/)).toBeInTheDocument();
     expect(screen.getByText(/Employees receive 25 days/)).toBeInTheDocument();
-    expect(screen.getAllByText(/92%/)).toHaveLength(2);
+    // The relevance score is shown once per card: as the match pill in the header.
+    expect(screen.getAllByText(/92%/)).toHaveLength(1);
     expect(screen.queryByText(/sha-256/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/checksum/i)).not.toBeInTheDocument();
   });

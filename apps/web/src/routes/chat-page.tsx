@@ -1,12 +1,12 @@
 import {
+  ArrowUpRight,
+  Database,
   FileSearch,
+  FileText,
   History,
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
-  Sparkles,
-  Database,
-  FileText,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -14,7 +14,6 @@ import { SqlPanel } from '../components/sql/SqlPanel';
 import { Alert } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Sheet } from '../components/ui/sheet';
 import { Spinner } from '../components/ui/spinner';
@@ -45,24 +44,6 @@ const DEMO_PROMPTS: Array<{ text: string; mode: ChatMode }> = [
   { text: 'Is our return rate within the policy target?', mode: 'auto' },
   { text: 'Which product categories have the highest return rate?', mode: 'auto' },
 ];
-
-const MODE_LABEL: Record<ChatMode, string> = {
-  auto: 'Auto mode',
-  documents: 'Documents mode',
-  sql: 'Data mode',
-};
-
-const MODE_BADGE: Record<ChatMode, 'analyst' | 'info' | 'live'> = {
-  auto: 'analyst',
-  documents: 'info',
-  sql: 'live',
-};
-
-const MODE_HINT: Record<ChatMode, string> = {
-  auto: 'questions are routed to documents, data, or both',
-  documents: 'answers cite accessible documents',
-  sql: 'answers include the generated SQL and result table',
-};
 
 const STREAM_START = 'Starting answer search…';
 
@@ -116,7 +97,11 @@ export function ChatPage() {
   const skipHistoryLoadRef = useRef<string | null>(null);
 
   // Context drawer / sources panel state
-  const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [sourcesOpen, setSourcesOpen] = useState(() =>
+    typeof window === 'undefined' || typeof window.matchMedia !== 'function'
+      ? true
+      : !window.matchMedia('(max-width: 767px)').matches,
+  );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedCitationIndex, setSelectedCitationIndex] = useState<number | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
@@ -510,7 +495,9 @@ export function ChatPage() {
       if (msg?.citations) return msg.citations;
     }
 
-    const latestAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    const latestAssistant = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant' && m.citations && m.citations.length > 0);
     return latestAssistant?.citations || [];
   }, [isStreaming, streamingCitations, selectedMessageId, messages]);
 
@@ -527,10 +514,10 @@ export function ChatPage() {
   }, [messages]);
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-6 lg:px-8 lg:py-5">
-      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] w-full max-w-[1600px] flex-col px-3 py-3 sm:px-4 md:h-[calc(100dvh-4rem)] lg:px-6">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         {/* Left desktop conversation rail */}
-        <div className="hidden lg:block lg:min-h-[calc(100vh-8.5rem)]">
+        <div className="hidden h-full lg:block">
           <ConversationRail
             conversations={conversations}
             activeConversationId={activeConversationId}
@@ -541,17 +528,16 @@ export function ChatPage() {
         </div>
 
         {/* Center workspace + right evidence drawer */}
-        <section className="flex min-h-[calc(100vh-8.5rem)] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-xs">
-          <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3 sm:px-6">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate font-display text-display-md text-ink-900">Ask Verity</h1>
-                <Badge variant="verified">Grounded answers</Badge>
-                <Badge variant={MODE_BADGE[mode]}>{MODE_LABEL[mode]}</Badge>
+                <Badge variant="verified" dot>
+                  Grounded answers
+                </Badge>
               </div>
-              <p className="mt-0.5 truncate text-body-sm text-ink-500">
-                {activeConversationTitle} · {MODE_HINT[mode]}
-              </p>
+              <p className="mt-0.5 truncate text-body-sm text-ink-500">{activeConversationTitle}</p>
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5">
@@ -593,9 +579,9 @@ export function ChatPage() {
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1">
             {/* Center message feed and composer */}
-            <div className="flex min-w-0 flex-1 flex-col bg-[#FAF8FF]">
+            <div className="flex min-w-0 flex-1 flex-col bg-canvas/40">
               <div
                 className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6"
                 aria-live="polite"
@@ -607,60 +593,70 @@ export function ChatPage() {
                     <p className="mt-2 text-body-sm text-ink-500">Retrieving saved messages…</p>
                   </div>
                 ) : messages.length === 0 && !isStreaming ? (
-                  <div className="mx-auto max-w-2xl py-8 sm:py-12">
-                    <EmptyState
-                      icon={<Sparkles aria-hidden="true" />}
-                      title="Your first answer starts here"
-                      description="Ask anything about your documents and data. Verity routes document questions to cited passages, data questions to safe read-only SQL, and mixed questions to both."
-                      action={
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                          <Badge variant="verified">Grounded answers</Badge>
-                          <Badge variant="analyst">Access-filtered sources</Badge>
-                          <Badge variant="neutral">Inline citations</Badge>
-                        </div>
-                      }
-                    />
-
-                    <div className="mt-6 space-y-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Try one of these
+                  <div className="mx-auto flex h-full max-w-3xl flex-col justify-center py-6">
+                    <div className="text-center">
+                      <span className="mx-auto flex size-14 items-center justify-center rounded-[16px] border border-line bg-surface shadow-elevated">
+                        <img src="/verity-logo.png" alt="" className="size-9 object-contain" />
+                      </span>
+                      <h2 className="mt-5 font-display text-display-xl tracking-display text-ink-900">
+                        Ask anything about your work
+                      </h2>
+                      <p className="mx-auto mt-2 max-w-lg text-body-md leading-relaxed text-ink-500">
+                        Verity answers from your indexed documents and company data. Every answer
+                        keeps its sources, so you can verify the passage or query behind it.
                       </p>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {DEMO_PROMPTS.map((prompt) => (
-                          <button
-                            key={prompt.text}
-                            type="button"
-                            onClick={() => handleSend(prompt.text, prompt.mode)}
-                            className="flex items-start gap-2.5 rounded-lg border border-slate-200/90 bg-white p-3 text-left text-body-sm text-slate-700 shadow-xs transition-fluid hover:border-sky-300 hover:bg-sky-50/40 hover:text-sky-900"
-                          >
-                            {prompt.text.includes('revenue') ||
-                            prompt.text.includes('return rate') ? (
-                              <Database
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        <Badge variant="info">Access-filtered sources</Badge>
+                        <Badge variant="neutral">Inline citations</Badge>
+                        <Badge variant="verified">Read-only data</Badge>
+                      </div>
+                    </div>
+
+                    <div className="mt-9">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+                        Start with a question
+                      </p>
+                      <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+                        {DEMO_PROMPTS.map((prompt) => {
+                          const isDataPrompt =
+                            prompt.text.includes('revenue') || prompt.text.includes('return rate');
+                          return (
+                            <button
+                              key={prompt.text}
+                              type="button"
+                              onClick={() => handleSend(prompt.text, prompt.mode)}
+                              className="group flex items-start gap-3 rounded-card border border-line bg-surface p-3.5 text-left shadow-xs transition-fluid hover:-translate-y-px hover:border-action-border hover:shadow-card"
+                            >
+                              <span
+                                className={`flex size-8 shrink-0 items-center justify-center rounded-[9px] border ${
+                                  isDataPrompt
+                                    ? 'border-verified-border bg-verified-bg text-verified-text'
+                                    : 'border-action-border bg-action-tint text-action'
+                                }`}
+                              >
+                                {isDataPrompt ? (
+                                  <Database aria-hidden="true" className="size-4" />
+                                ) : (
+                                  <FileText aria-hidden="true" className="size-4" />
+                                )}
+                              </span>
+                              <span className="min-w-0 flex-1 text-body-sm leading-relaxed text-ink-700 group-hover:text-ink-900">
+                                {prompt.text}
+                              </span>
+                              <ArrowUpRight
                                 aria-hidden="true"
-                                className="mt-0.5 size-4 shrink-0 text-emerald-600"
+                                className="mt-0.5 size-3.5 shrink-0 text-ink-400 transition-fluid group-hover:text-action"
                               />
-                            ) : (
-                              <FileText
-                                aria-hidden="true"
-                                className="mt-0.5 size-4 shrink-0 text-sky-600"
-                              />
-                            )}
-                            <span className="line-clamp-2">{prompt.text}</span>
-                          </button>
-                        ))}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <>
                     {messages.map((message, index) => (
-                      <div
-                        key={message.id}
-                        onClick={() => {
-                          setSelectedMessageId(message.id);
-                          setSelectedCitationIndex(null);
-                        }}
-                      >
+                      <div key={message.id}>
                         <MessageItem
                           message={message}
                           selectedCitationIndex={selectedCitationIndex}
@@ -682,63 +678,70 @@ export function ChatPage() {
 
                     {isStreaming && (
                       <article
-                        className="rounded-lg border border-sky-300 bg-white p-4 shadow-xs sm:p-5"
+                        className="rounded-card border border-action-border bg-surface shadow-elevated"
                         aria-live="polite"
                       >
-                        <header className="flex items-center justify-between border-b border-slate-100 pb-3 text-xs text-ink-500">
+                        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="flex size-6 animate-pulse items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                              <Sparkles className="size-3.5" aria-hidden="true" />
-                            </span>
-                            <span className="font-semibold text-slate-800">Verity</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="rounded border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700">
-                              {streamingStatus || 'Streaming answer…'}
+                            <img
+                              src="/verity-logo.png"
+                              alt=""
+                              className="size-6 animate-pulse-soft rounded-[7px] border border-line bg-surface object-contain"
+                            />
+                            <span className="text-label-md font-semibold text-ink-900">Verity</span>
+                            <span aria-hidden="true" className="h-3 w-px bg-line-strong" />
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-action-border bg-action-tint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-action">
+                              <span
+                                aria-hidden="true"
+                                className="size-1.5 animate-pulse-soft rounded-full bg-action-accent"
+                              />
+                              {streamingStatus || 'Generating answer…'}
                             </span>
                           </div>
-                          <Badge variant="live">Generating…</Badge>
                         </header>
 
-                        {streamingSql ? (
-                          <SqlPanel
-                            result={{
-                              sql: streamingSql.sql ?? streamingSql.query ?? '',
-                              columns: streamingSql.columns,
-                              rows: streamingSql.rows,
-                              row_count: streamingSql.row_count,
-                              truncated: streamingSql.truncated,
-                              execution_ms: streamingSql.execution_ms ?? 0,
-                            }}
-                          />
-                        ) : null}
+                        <div className="px-4 py-4 sm:px-5">
+                          {streamingSql ? (
+                            <SqlPanel
+                              result={{
+                                sql: streamingSql.sql ?? streamingSql.query ?? '',
+                                columns: streamingSql.columns,
+                                rows: streamingSql.rows,
+                                row_count: streamingSql.row_count,
+                                truncated: streamingSql.truncated,
+                                execution_ms: streamingSql.execution_ms ?? 0,
+                              }}
+                            />
+                          ) : null}
 
-                        <div className="mt-3">
-                          {streamingTokens ? (
-                            <div className="whitespace-pre-wrap font-sans text-body-md leading-relaxed text-slate-800">
-                              {streamingTokens}
-                              <span className="ml-1 inline-block size-2 animate-ping rounded-full bg-sky-600" />
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2 py-3 text-body-sm text-ink-500">
-                              <Spinner
-                                label={
-                                  mode === 'sql'
-                                    ? 'Querying data…'
-                                    : mode === 'auto'
-                                      ? 'Choosing the best source…'
-                                      : 'Searching documents…'
-                                }
-                              />
-                              <span>
-                                {streamingStatus ||
-                                  (mode === 'sql'
-                                    ? 'Preparing a safe read-only query…'
-                                    : mode === 'auto'
-                                      ? 'Checking documents and company data…'
-                                      : 'Searching accessible documents…')}
-                              </span>
-                            </div>
-                          )}
+                          <div className="mt-1">
+                            {streamingTokens ? (
+                              <div className="whitespace-pre-wrap font-sans text-body-md leading-relaxed text-ink-900">
+                                {streamingTokens}
+                                <span className="ml-1 inline-block size-2 animate-ping rounded-full bg-action-accent" />
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2 py-2 text-body-sm text-ink-500">
+                                <Spinner
+                                  label={
+                                    mode === 'sql'
+                                      ? 'Preparing a read-only query…'
+                                      : mode === 'auto'
+                                        ? 'Checking documents and data…'
+                                        : 'Searching documents…'
+                                  }
+                                />
+                                <span>
+                                  {streamingStatus ||
+                                    (mode === 'sql'
+                                      ? 'Working on a safe read-only query…'
+                                      : mode === 'auto'
+                                        ? 'Reviewing documents and company data…'
+                                        : 'Finding relevant passages…')}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </article>
                     )}
@@ -774,7 +777,7 @@ export function ChatPage() {
 
             {/* Right desktop evidence drawer */}
             {sourcesOpen && (
-              <div className="hidden h-full w-[380px] shrink-0 md:block">
+              <div className="hidden h-full w-[360px] shrink-0 md:block">
                 <ContextDrawer
                   citations={activeCitations}
                   selectedIndex={selectedCitationIndex}
@@ -793,7 +796,7 @@ export function ChatPage() {
         open={isMobile && sourcesOpen}
         onClose={() => setSourcesOpen(false)}
         title="Source evidence"
-        description="Accessible passages retrieved for the active answer."
+        description="Accessible passages for the active or most recent cited answer."
         side="right"
       >
         <div className="h-full">
@@ -802,6 +805,7 @@ export function ChatPage() {
             selectedIndex={selectedCitationIndex}
             onSelectCitation={(index) => setSelectedCitationIndex(index)}
             onOpenDocument={handleOpenDocument}
+            embedded
           />
         </div>
       </Sheet>
@@ -822,6 +826,7 @@ export function ChatPage() {
             onNewConversation={handleNewConversation}
             onDeleteConversation={(id) => void handleDeleteConversation(id)}
             onCloseMobile={() => setHistoryOpen(false)}
+            embedded
           />
         </div>
       </Sheet>

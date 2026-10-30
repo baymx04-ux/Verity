@@ -19,7 +19,7 @@ export function Accordion({ items, className = '' }: AccordionProps) {
     >
       {items.map((item) => (
         <details key={item.id} className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-label-md text-ink-700 hover:bg-muted [&::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 text-label-md text-ink-700 transition-colors hover:bg-canvas-subtle [&::-webkit-details-marker]:hidden">
             {item.title}
             <ChevronDown
               aria-hidden="true"

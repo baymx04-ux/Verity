@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, FileText, ShieldCheck, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, FileText, Quote, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Badge } from '../../components/ui/badge';
@@ -11,6 +11,7 @@ interface ContextDrawerProps {
   onSelectCitation: (index: number | null) => void;
   onClose?: () => void;
   onOpenDocument?: ((documentId: string) => Promise<void>) | undefined;
+  embedded?: boolean;
 }
 
 export function ContextDrawer({
@@ -19,6 +20,7 @@ export function ContextDrawer({
   onSelectCitation,
   onClose,
   onOpenDocument,
+  embedded = false,
 }: ContextDrawerProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [openingDocumentId, setOpeningDocumentId] = useState<string | null>(null);
@@ -40,7 +42,7 @@ export function ContextDrawer({
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      // ignore
+      // Clipboard access is best-effort.
     }
   };
 
@@ -59,54 +61,59 @@ export function ContextDrawer({
 
   return (
     <aside
-      aria-label="Source Evidence and Context Drawer"
-      className="flex h-full flex-col border-l border-line bg-surface"
+      aria-label="Source evidence and context drawer"
+      className={`flex h-full flex-col bg-surface ${embedded ? '' : 'border-l border-line'}`}
     >
-      <header className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-emerald-600" aria-hidden="true" />
-          <h2 className="font-display text-display-sm text-ink-900">Source Evidence</h2>
-          {citations.length > 0 && (
-            <Badge variant="verified">
-              {citations.length} {citations.length === 1 ? 'Source' : 'Sources'}
-            </Badge>
-          )}
-        </div>
-        {onClose && (
-          <IconButton
-            aria-label="Close source evidence"
-            size="sm"
-            variant="subtle"
-            onClick={onClose}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </IconButton>
-        )}
-      </header>
+      {embedded ? null : (
+        <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2">
+            <ShieldCheck className="size-4 shrink-0 text-verified" aria-hidden="true" />
+            <h2 className="truncate font-display text-display-sm text-ink-900">Source evidence</h2>
+            {citations.length > 0 ? (
+              <Badge variant="verified">
+                {citations.length} {citations.length === 1 ? 'source' : 'sources'}
+              </Badge>
+            ) : null}
+          </div>
+          {onClose ? (
+            <IconButton
+              aria-label="Close source evidence"
+              size="sm"
+              variant="ghost"
+              onClick={onClose}
+            >
+              <X className="size-4" aria-hidden="true" />
+            </IconButton>
+          ) : null}
+        </header>
+      )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 sm:p-5">
+      <div className="flex-1 space-y-3 overflow-y-auto p-3.5 sm:p-4">
         {citations.length === 0 ? (
-          <div className="flex h-64 flex-col items-center justify-center text-center px-4">
-            <span className="mb-3 flex size-10 items-center justify-center rounded-full bg-surface-container-low text-ink-400">
+          <div className="flex h-64 flex-col items-center justify-center px-5 text-center">
+            <span className="mb-3 flex size-11 items-center justify-center rounded-[13px] border border-line bg-canvas-subtle text-ink-400">
               <FileText className="size-5" aria-hidden="true" />
             </span>
-            <p className="text-label-md text-ink-700">No active sources</p>
+            <p className="text-label-md text-ink-700">No sources to show</p>
             <p className="mt-1 max-w-xs text-body-sm leading-relaxed text-ink-500">
-              Select an answer or click a citation chip{' '}
-              <span className="font-mono text-sky-700">[1]</span> to inspect the passage, document,
-              and retrieval score.
+              Ask a question, then select a citation chip like{' '}
+              <span className="rounded border border-action-border bg-action-tint px-1 py-0.5 font-mono text-[10px] text-action">
+                [1]
+              </span>{' '}
+              to inspect the exact passage and match score.
             </p>
           </div>
         ) : (
           <>
-            {openError && (
+            {openError ? (
               <p
                 role="alert"
-                className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700"
+                className="rounded-control border border-danger-border bg-danger-bg px-3 py-2 text-body-sm text-danger-text"
               >
                 {openError}
               </p>
-            )}
+            ) : null}
+
             {citations.map((citation, idx) => {
               const isSelected = selectedIndex === idx;
               const scorePercent = Math.round(citation.score * 100);
@@ -118,87 +125,81 @@ export function ContextDrawer({
                     cardRefs.current[idx] = el;
                   }}
                   onClick={() => onSelectCitation(idx)}
-                  className={`rounded-lg border transition-all cursor-pointer p-4 space-y-3 shadow-xs ${
+                  className={`cursor-pointer rounded-card border p-3.5 transition-fluid ${
                     isSelected
-                      ? 'border-sky-400 ring-2 ring-sky-300/80 bg-sky-50/30'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
+                      ? 'border-action-border bg-action-tint/40 shadow-elevated ring-2 ring-action-accent/15'
+                      : 'border-line bg-surface shadow-card hover:-translate-y-px hover:border-line-strong hover:shadow-elevated'
                   }`}
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-sky-100 font-mono text-[11px] font-semibold text-sky-800">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-start gap-2">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-[7px] border border-action-border bg-action-tint font-mono text-[11px] font-semibold text-action">
                         {idx + 1}
                       </span>
-                      <span
-                        className="truncate text-xs font-semibold text-slate-800"
-                        title={citation.title}
-                      >
-                        {citation.title}
-                      </span>
-                      {citation.page !== null && (
-                        <span className="shrink-0 text-xs text-slate-400">• p.{citation.page}</span>
-                      )}
+                      <div className="min-w-0">
+                        <p
+                          className="truncate text-label-md font-semibold text-ink-900"
+                          title={citation.title}
+                        >
+                          {citation.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-ink-500">
+                          {citation.page !== null ? `p.${citation.page}` : 'Document source'}
+                          {citation.section ? ` · ${citation.section}` : ''}
+                        </p>
+                      </div>
                     </div>
-                    <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-500">
-                      Score {scorePercent}%
-                    </span>
+                    <Badge variant="verified" className="shrink-0">
+                      {scorePercent}% match
+                    </Badge>
                   </div>
 
-                  {citation.section && (
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-ink-400">
-                      Section: {citation.section}
+                  <div className="mt-3 rounded-nested border border-line bg-canvas-subtle/80 p-3">
+                    <Quote aria-hidden="true" className="mb-1 size-3.5 text-ink-400" />
+                    <p className="text-[12.5px] italic leading-relaxed text-ink-700">
+                      “{citation.snippet}”
                     </p>
-                  )}
-
-                  <div className="p-3 bg-slate-50 rounded-md border border-slate-200/60 text-xs text-slate-600 leading-relaxed italic">
-                    “{citation.snippet}”
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 text-body-sm">
-                    <span className="text-[11px] text-ink-500">
-                      Retrieval score:{' '}
-                      <span className="font-medium text-ink-700">{scorePercent}%</span>
-                    </span>
-                    <div className="flex items-center gap-1">
+                  <div className="mt-3 flex items-center justify-end gap-1 border-t border-line/70 pt-2.5">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copySnippet(citation.id, citation.snippet);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] text-ink-500 transition-fluid hover:bg-inset hover:text-ink-900"
+                    >
+                      {copiedId === citation.id ? (
+                        <>
+                          <Check className="size-3 text-verified" aria-hidden="true" />
+                          <span className="text-verified-text">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="size-3" aria-hidden="true" />
+                          <span>Copy passage</span>
+                        </>
+                      )}
+                    </button>
+                    {onOpenDocument ? (
                       <button
                         type="button"
+                        disabled={openingDocumentId === citation.document_id}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void copySnippet(citation.id, citation.snippet);
+                          void openDocument(citation.document_id);
                         }}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ink-500 hover:bg-slate-100 hover:text-ink-700"
+                        className="inline-flex items-center gap-1 rounded-[6px] px-2 py-1 text-[11px] font-medium text-action transition-fluid hover:bg-action-tint disabled:cursor-wait disabled:opacity-60"
                       >
-                        {copiedId === citation.id ? (
-                          <>
-                            <Check className="size-3 text-emerald-600" aria-hidden="true" />
-                            <span className="text-emerald-700">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="size-3" aria-hidden="true" />
-                            <span>Copy</span>
-                          </>
-                        )}
+                        <span>
+                          {openingDocumentId === citation.document_id
+                            ? 'Opening…'
+                            : 'Open document'}
+                        </span>
+                        <ExternalLink className="size-3" aria-hidden="true" />
                       </button>
-                      {onOpenDocument && (
-                        <button
-                          type="button"
-                          disabled={openingDocumentId === citation.document_id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void openDocument(citation.document_id);
-                          }}
-                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-sky-700 hover:bg-sky-50 disabled:cursor-wait disabled:opacity-60"
-                        >
-                          <span>
-                            {openingDocumentId === citation.document_id
-                              ? 'Opening…'
-                              : 'Open document'}
-                          </span>
-                          <ExternalLink className="size-3" aria-hidden="true" />
-                        </button>
-                      )}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
               );

@@ -2,26 +2,23 @@ import { type HTMLAttributes, type TdHTMLAttributes, type ThHTMLAttributes } fro
 
 export function Table({ className = '', ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto rounded-nested border border-line">
+    <div className="w-full overflow-x-auto">
       <table className={`w-full border-collapse text-left text-body-md ${className}`} {...props} />
     </div>
   );
 }
 
 export function TableHead({ className = '', ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={`bg-muted ${className}`} {...props} />;
+  return <thead className={`bg-canvas-subtle ${className}`} {...props} />;
 }
 
 export function TableBody({ className = '', ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={className} {...props} />;
+  return <tbody className={`divide-y divide-line ${className}`} {...props} />;
 }
 
 export function TableRow({ className = '', ...props }: HTMLAttributes<HTMLTableRowElement>) {
   return (
-    <tr
-      className={`border-b border-line last:border-b-0 hover:bg-muted/70 ${className}`}
-      {...props}
-    />
+    <tr className={`transition-colors hover:bg-canvas-subtle/60 ${className}`} {...props} />
   );
 }
 
@@ -32,12 +29,12 @@ export function TableHeaderCell({
   return (
     <th
       scope="col"
-      className={`px-4 py-3 text-label-sm uppercase tracking-[0.04em] text-ink-500 ${className}`}
+      className={`whitespace-nowrap border-b border-line px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-500 ${className}`}
       {...props}
     />
   );
 }
 
 export function TableCell({ className = '', ...props }: TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={`px-4 py-3 align-middle text-ink-700 ${className}`} {...props} />;
+  return <td className={`px-4 py-3.5 align-middle text-ink-700 ${className}`} {...props} />;
 }

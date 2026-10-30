@@ -123,7 +123,9 @@ export function SchemaCatalogEditor() {
           return patch;
         }),
       });
-      setMessage(`Saved ${selected.qualified_name}. New descriptions will be used on the next data question.`);
+      setMessage(
+        `Saved ${selected.qualified_name}. New descriptions will be used on the next data question.`,
+      );
       setViews((current) =>
         current.map((view) =>
           view.view_name === selected.view_name
@@ -172,15 +174,19 @@ export function SchemaCatalogEditor() {
   };
 
   return (
-    <section className="mt-6 overflow-hidden rounded-card border border-line bg-surface shadow-xs">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-4 sm:px-5">
+    <section className="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-5 sm:px-6">
         <div>
-          <div className="flex items-center gap-2">
-            <Database aria-hidden="true" className="size-4 text-action" />
-            <h2 className="font-display text-display-xs text-ink-900">Text-to-SQL catalog</h2>
-            <Badge variant="analyst">Admin editable</Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-[8px] border border-action-border bg-action-tint text-action">
+              <Database aria-hidden="true" className="size-4" />
+            </span>
+            <h2 className="font-display text-display-md text-ink-900">Text-to-SQL catalog</h2>
+            <Badge variant="analyst" dot>
+              Admin editable
+            </Badge>
           </div>
-          <p className="mt-1 max-w-2xl text-body-sm text-ink-500">
+          <p className="mt-1.5 max-w-2xl text-body-sm leading-relaxed text-ink-500">
             Descriptions and example values ground the model in the read-only business views.
             Introspection never exposes the underlying tables or PII.
           </p>
@@ -192,13 +198,16 @@ export function SchemaCatalogEditor() {
           onClick={() => void handleRefresh()}
           disabled={refreshing || loading}
         >
-          <RefreshCw className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <RefreshCw
+            className={`size-3.5 ${refreshing ? 'animate-spin' : ''}`}
+            aria-hidden="true"
+          />
           {refreshing ? 'Refreshing…' : 'Refresh views'}
         </Button>
       </header>
 
       {error ? (
-        <div className="px-4 pt-4 sm:px-5">
+        <div className="px-5 pt-4 sm:px-6">
           <Alert variant="danger" title="Catalog request failed">
             <p>{error}</p>
           </Alert>
@@ -206,7 +215,7 @@ export function SchemaCatalogEditor() {
       ) : null}
 
       {message ? (
-        <div className="px-4 pt-4 sm:px-5">
+        <div className="px-5 pt-4 sm:px-6">
           <Alert variant="success" title="Catalog updated">
             <p>{message}</p>
           </Alert>
@@ -219,18 +228,23 @@ export function SchemaCatalogEditor() {
           Loading the read-only view catalog…
         </div>
       ) : views.length === 0 ? (
-        <div className="px-4 py-10 text-center sm:px-5">
-          <p className="text-body-md text-ink-700">No views have been catalogued yet.</p>
-          <p className="mt-1 text-body-sm text-ink-500">
-            Run migrations, load the business seed, then choose Refresh views.
-          </p>
-        </div>
+        error ? null : (
+          <div className="px-5 py-12 text-center sm:px-6">
+            <p className="text-body-md text-ink-700">No views have been catalogued yet.</p>
+            <p className="mt-1 text-body-sm text-ink-500">
+              Run migrations, load the business seed, then choose Refresh views.
+            </p>
+          </div>
+        )
       ) : (
-        <div className="grid min-h-[32rem] md:grid-cols-[16rem_minmax(0,1fr)]">
+        <div className="grid min-h-[32rem] md:grid-cols-[17rem_minmax(0,1fr)]">
           <nav
             aria-label="Business views"
-            className="border-b border-line bg-surface-container-low p-2 md:border-b-0 md:border-r"
+            className="border-b border-line bg-canvas-subtle/70 p-2.5 md:border-b-0 md:border-r"
           >
+            <p className="px-2 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-400">
+              {views.length} read-only {views.length === 1 ? 'view' : 'views'}
+            </p>
             <div className="max-h-[36rem] space-y-1 overflow-y-auto md:max-h-[42rem]">
               {views.map((view) => {
                 const active = view.view_name === selectedName;
@@ -240,18 +254,26 @@ export function SchemaCatalogEditor() {
                     type="button"
                     onClick={() => selectView(view)}
                     aria-current={active ? 'page' : undefined}
-                    className={`flex w-full items-start gap-2 rounded-control px-2.5 py-2 text-left transition-colors ${
+                    className={`flex w-full items-start gap-2.5 rounded-control border px-2.5 py-2 text-left transition-fluid ${
                       active
-                        ? 'bg-surface text-ink-900 shadow-xs ring-1 ring-line'
-                        : 'text-ink-600 hover:bg-surface hover:text-ink-900'
+                        ? 'border-action-border bg-surface text-ink-900 shadow-card'
+                        : 'border-transparent text-ink-600 hover:border-line hover:bg-surface hover:text-ink-900'
                     }`}
                   >
-                    <Table2 aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-action" />
+                    <span
+                      className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-[6px] border ${
+                        active
+                          ? 'border-action-border bg-action-tint text-action'
+                          : 'border-line bg-surface text-ink-400'
+                      }`}
+                    >
+                      <Table2 aria-hidden="true" className="size-3" />
+                    </span>
                     <span className="min-w-0">
                       <span className="block truncate font-mono text-[12px] font-medium">
                         {view.view_name}
                       </span>
-                      <span className="mt-0.5 block text-[11px] text-ink-400">
+                      <span className="mt-0.5 block text-[10px] text-ink-400">
                         {view.columns?.length ?? 0} columns
                       </span>
                     </span>
@@ -262,26 +284,36 @@ export function SchemaCatalogEditor() {
           </nav>
 
           {selected && draft ? (
-            <div className="min-w-0 p-4 sm:p-5">
+            <div className="min-w-0 p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-label-sm text-action">{selected.qualified_name}</p>
-                  <p className="mt-1 text-body-sm text-ink-500">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-[12px] font-semibold text-action">
+                    {selected.qualified_name}
+                  </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-body-sm text-ink-500">
+                    <span
+                      aria-hidden="true"
+                      className={`size-1.5 rounded-full ${
+                        selected.edited_at ? 'bg-verified' : 'bg-ink-400'
+                      }`}
+                    />
                     {selected.edited_at ? 'Admin edits saved.' : 'Generated during introspection.'}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void handleSave()}
-                  disabled={saving}
-                >
-                  {saving ? <Spinner label="Saving catalog" /> : <Save className="size-3.5" aria-hidden="true" />}
+                <Button type="button" size="sm" onClick={() => void handleSave()} disabled={saving}>
+                  {saving ? (
+                    <Spinner label="Saving catalog" />
+                  ) : (
+                    <Save className="size-3.5" aria-hidden="true" />
+                  )}
                   {saving ? 'Saving…' : 'Save changes'}
                 </Button>
               </div>
 
-              <label htmlFor="catalog-description" className="mt-5 block text-label-sm font-semibold text-ink-800">
+              <label
+                htmlFor="catalog-description"
+                className="mt-6 block text-[10px] font-semibold uppercase tracking-[0.1em] text-ink-500"
+              >
                 View description
               </label>
               <Textarea
@@ -296,36 +328,40 @@ export function SchemaCatalogEditor() {
                 className="mt-1.5 min-h-20"
               />
 
-              <div className="mt-5 flex items-center justify-between gap-2">
-                <h3 className="text-label-md font-semibold text-ink-900">
+              <div className="mt-6 flex items-center justify-between gap-2">
+                <h3 className="flex items-baseline gap-2 text-label-md font-semibold text-ink-900">
                   Columns
-                  <span className="ml-2 font-normal text-ink-400">{draft.columns.length}</span>
+                  <span className="font-mono text-[11px] font-normal text-ink-400">
+                    {draft.columns.length}
+                  </span>
                 </h3>
-                <span className="inline-flex items-center gap-1 text-[11px] text-ink-400">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-verified-border bg-verified-bg px-2 py-0.5 text-[10px] font-medium text-verified-text">
                   <CheckCircle2 aria-hidden="true" className="size-3" />
                   Read-only on the SQL role
                 </span>
               </div>
 
-              <div className="mt-2 space-y-3">
+              <div className="mt-2.5 space-y-2.5">
                 {draft.columns.map((column) => (
                   <div
                     key={column.name}
-                    className="rounded-nested border border-line bg-surface-container-low p-3"
+                    className="rounded-nested border border-line bg-canvas-subtle/60 p-3.5 transition-fluid hover:border-line-strong"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <code className="font-mono text-[12px] font-semibold text-ink-900">
+                      <code className="rounded-[5px] border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-900 shadow-xs">
                         {column.name}
                       </code>
                       <Badge variant="neutral">{column.type}</Badge>
-                      {column.nullable ? <span className="text-[11px] text-ink-400">nullable</span> : null}
+                      {column.nullable ? (
+                        <span className="text-[10px] text-ink-400">nullable</span>
+                      ) : null}
                       {column.references ? (
-                        <span className="text-[11px] text-emerald-700">
+                        <span className="font-mono text-[10px] text-verified-text">
                           → {column.references.table}.{column.references.column}
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_16rem]">
+                    <div className="mt-2.5 grid gap-2 lg:grid-cols-[minmax(0,1fr)_16rem]">
                       <label className="block">
                         <span className="sr-only">{`Description for ${column.name}`}</span>
                         <input
@@ -334,7 +370,7 @@ export function SchemaCatalogEditor() {
                             updateColumn(column.name, { description: event.target.value })
                           }
                           placeholder="What this column means…"
-                          className="h-9 w-full rounded-control border border-line bg-surface px-2.5 text-body-sm text-ink-900 placeholder:text-ink-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/30"
+                          className="h-9 w-full rounded-control border border-line bg-surface px-2.5 text-body-sm text-ink-900 shadow-inset transition-fluid placeholder:text-ink-400 hover:border-line-strong focus-visible:border-action-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/20"
                         />
                       </label>
                       <label className="block">
@@ -345,7 +381,7 @@ export function SchemaCatalogEditor() {
                             updateColumn(column.name, { examplesText: event.target.value })
                           }
                           placeholder="Example values, comma-separated"
-                          className="h-9 w-full rounded-control border border-line bg-surface px-2.5 text-body-sm text-ink-900 placeholder:text-ink-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/30"
+                          className="h-9 w-full rounded-control border border-line bg-surface px-2.5 text-body-sm text-ink-900 shadow-inset transition-fluid placeholder:text-ink-400 hover:border-line-strong focus-visible:border-action-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/20"
                         />
                       </label>
                     </div>

@@ -1,4 +1,4 @@
-import { ArrowUp, Database, FileText, Sparkles, Square } from 'lucide-react';
+import { ArrowUp, Database, FileText, Route, Square } from 'lucide-react';
 import { type KeyboardEvent, useRef } from 'react';
 
 import { Button } from '../../components/ui/button';
@@ -15,6 +15,12 @@ interface ComposerProps {
   mode: ChatMode;
   onModeChange: (mode: ChatMode) => void;
 }
+
+const MODES: Array<{ value: ChatMode; label: string; icon: typeof Route }> = [
+  { value: 'auto', label: 'Auto', icon: Route },
+  { value: 'documents', label: 'Documents', icon: FileText },
+  { value: 'sql', label: 'Data', icon: Database },
+];
 
 export function Composer({
   question,
@@ -38,11 +44,12 @@ export function Composer({
   };
 
   return (
-    <div className="border-t border-line bg-surface/90 p-4 backdrop-blur sm:p-5">
-      <div className="relative rounded-xl border border-slate-200 bg-white shadow-xs transition-all focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-100">
-        <label htmlFor="composer-input" className="sr-only">
-          Ask a question
-        </label>
+    <div className="border-t border-line bg-surface/85 p-3 backdrop-blur-sm sm:p-4">
+      <div className="mx-auto max-w-4xl">
+        <div className="rounded-2xl border border-line bg-surface shadow-elevated transition-fluid focus-within:border-action-accent focus-within:ring-2 focus-within:ring-action-accent/15">
+          <label htmlFor="composer-input" className="sr-only">
+            Ask a question
+          </label>
           <Textarea
             id="composer-input"
             ref={textareaRef}
@@ -52,110 +59,90 @@ export function Composer({
             disabled={disabled}
             aria-busy={isStreaming}
             placeholder={
-            mode === 'sql'
-              ? 'Ask a data question, e.g. “Revenue by region last quarter”…'
-              : mode === 'auto'
-                ? 'Ask anything about your documents or company data…'
-                : 'Ask a question about your documents…'
-          }
-          className="min-h-16 w-full resize-none border-0 bg-transparent px-4 py-3 text-body-md text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-0"
-        />
+              mode === 'sql'
+                ? 'Ask a data question, e.g. “Revenue by region last quarter”…'
+                : mode === 'auto'
+                  ? 'Ask anything about your documents or company data…'
+                  : 'Ask a question about your documents…'
+            }
+            className="min-h-[60px] w-full resize-none border-0 bg-transparent px-4 py-3.5 text-body-md text-ink-900 shadow-none placeholder:text-ink-400 hover:border-0 focus-visible:border-0 focus-visible:ring-0"
+          />
 
-        <div className="flex items-center justify-between gap-2 rounded-b-xl border-t border-slate-100 bg-slate-50/60 px-3 py-2">
-          <div
-            className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-xs"
-            role="group"
-            aria-label="Answer mode"
-          >
-            <button
-              type="button"
-              aria-pressed={mode === 'auto'}
-              onClick={() => onModeChange('auto')}
-              disabled={isStreaming}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                mode === 'auto'
-                  ? 'bg-violet-50 text-violet-800'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-              }`}
+          <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-line bg-canvas-subtle/60 px-2.5 py-2">
+            <div
+              className="inline-flex rounded-control border border-line bg-surface p-0.5 shadow-xs"
+              role="group"
+              aria-label="Answer mode"
             >
-              <Sparkles className="size-3" aria-hidden="true" />
-              Auto
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === 'documents'}
-              onClick={() => onModeChange('documents')}
-              disabled={isStreaming}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                mode === 'documents'
-                  ? 'bg-sky-50 text-sky-800'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-              }`}
-            >
-              <FileText className="size-3" aria-hidden="true" />
-              Documents
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === 'sql'}
-              onClick={() => onModeChange('sql')}
-              disabled={isStreaming}
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                mode === 'sql'
-                  ? 'bg-emerald-50 text-emerald-800'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-              }`}
-            >
-              <Database className="size-3" aria-hidden="true" />
-              Data
-            </button>
-          </div>
+              {MODES.map((option) => {
+                const Icon = option.icon;
+                const active = mode === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => onModeChange(option.value)}
+                    disabled={isStreaming}
+                    className={`inline-flex items-center gap-1.5 rounded-[6px] px-2.5 py-1.5 text-[11px] font-medium transition-fluid disabled:cursor-not-allowed disabled:opacity-60 ${
+                      active
+                        ? 'bg-action-tint text-action'
+                        : 'text-ink-500 hover:bg-inset hover:text-ink-900'
+                    }`}
+                  >
+                    <Icon className="size-3.5" aria-hidden="true" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
 
-          <div className="flex items-center gap-2">
-            {isStreaming ? (
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={onStop}
-                className="h-8 gap-1.5 px-3 text-xs"
-              >
-                <Square className="size-3 fill-current" aria-hidden="true" />
-                Stop
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={onSubmit}
-                disabled={disabled || !question.trim()}
-                className="h-8 gap-1.5 px-3 text-xs"
-              >
-                <span>Ask</span>
-                <ArrowUp className="size-3.5" aria-hidden="true" />
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {isStreaming ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={onStop}
+                  className="h-9 gap-1.5 px-3"
+                >
+                  <Square className="size-3 fill-current" aria-hidden="true" />
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={onSubmit}
+                  disabled={disabled || !question.trim()}
+                  className="h-9 gap-1.5 rounded-full px-3.5"
+                >
+                  <span>Ask</span>
+                  <ArrowUp className="size-3.5" aria-hidden="true" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      <p className="mt-2 text-center text-xs text-ink-400">
-        Press{' '}
-        <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[11px]">
-          Enter
-        </kbd>{' '}
-        to send,{' '}
-        <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[11px]">
-          Shift + Enter
-        </kbd>{' '}
-        for a new line.{' '}
-        {mode === 'sql'
-          ? 'Data answers show the read-only SQL and result table.'
-          : mode === 'auto'
-            ? 'Auto picks documents, data, or both depending on the question.'
-            : 'Citations map to the retrieved document passages.'}
-      </p>
+        <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">
+          Press{' '}
+          <kbd className="rounded border border-line bg-surface px-1 py-0.5 font-mono text-[10px] text-ink-500">
+            Enter
+          </kbd>{' '}
+          to send,{' '}
+          <kbd className="rounded border border-line bg-surface px-1 py-0.5 font-mono text-[10px] text-ink-500">
+            Shift + Enter
+          </kbd>{' '}
+          for a new line.{' '}
+          {mode === 'sql'
+            ? 'Data answers show the read-only SQL and result table.'
+            : mode === 'auto'
+              ? 'Auto picks documents, data, or both depending on the question.'
+              : 'Citations map to the retrieved document passages.'}
+        </p>
+      </div>
     </div>
   );
 }

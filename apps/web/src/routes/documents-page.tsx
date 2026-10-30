@@ -1,4 +1,12 @@
-import { ChevronRight, Download, FileSearch, FileText, RefreshCw, Upload } from 'lucide-react';
+import {
+  ChevronRight,
+  Download,
+  FileSearch,
+  FileText,
+  RefreshCw,
+  Search,
+  Upload,
+} from 'lucide-react';
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 import { Alert } from '../components/ui/alert';
@@ -29,6 +37,26 @@ import {
   uploadDocument,
 } from '../features/documents/document-api';
 import { DocumentAccessBadge, DocumentStatusBadge } from '../features/documents/document-badges';
+
+function useCompactViewport(): boolean {
+  const [matches, setMatches] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 767px)').matches,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 767px)');
+    const update = () => setMatches(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  return matches;
+}
 import { DocumentDetail } from '../features/documents/document-detail';
 import {
   UploadDialog,
@@ -60,6 +88,7 @@ export function DocumentsPage() {
   const role = user?.role ?? 'viewer';
   const canUpload = role === 'admin' || role === 'analyst';
   const canManageAccess = role === 'admin';
+  const isCompact = useCompactViewport();
 
   const [query, setQuery] = useState<QueryState>(INITIAL_QUERY);
   const [searchDraft, setSearchDraft] = useState('');
@@ -260,38 +289,51 @@ export function DocumentsPage() {
   const filtered = Boolean(query.status || query.accessLevel || query.search);
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 lg:px-8">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
+            <span className="flex size-6 items-center justify-center rounded-[7px] border border-action-border bg-action-tint text-action">
+              <FileText aria-hidden="true" className="size-3.5" />
+            </span>
+            Document repository
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2.5">
             <h1 className="font-display text-display-lg text-ink-900">Documents</h1>
             <Badge variant="neutral">{total.toLocaleString()} indexed sources</Badge>
           </div>
-          <p className="mt-1 max-w-2xl text-body-md text-ink-500">
+          <p className="mt-1.5 max-w-2xl text-body-md leading-relaxed text-ink-500">
             Upload policy, handbook, and product documents. Verity parses, chunks, and embeds each
             one so answers can cite it. Access grants are enforced for every reader.
           </p>
         </div>
         {canUpload ? (
-          <Button onClick={() => setUploadOpen(true)}>
+          <Button size="lg" onClick={() => setUploadOpen(true)}>
             <Upload aria-hidden="true" className="size-4" />
             Upload document
           </Button>
         ) : null}
       </header>
 
-      <section className="mb-4 rounded-card border border-line bg-surface p-4 shadow-xs">
+      <section className="mb-4 rounded-card border border-line bg-surface p-4 shadow-card sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <form className="flex flex-1 gap-2" onSubmit={applySearch}>
             <label htmlFor="document-search" className="sr-only">
               Search documents
             </label>
-            <Input
-              id="document-search"
-              value={searchDraft}
-              placeholder="Search by title or filename"
-              onChange={(event) => setSearchDraft(event.target.value)}
-            />
+            <div className="relative flex-1">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-400"
+              />
+              <Input
+                id="document-search"
+                value={searchDraft}
+                placeholder="Search by title or filename"
+                onChange={(event) => setSearchDraft(event.target.value)}
+                className="pl-9"
+              />
+            </div>
             <Button type="submit" variant="secondary" disabled={loading}>
               Search
             </Button>
@@ -345,7 +387,9 @@ export function DocumentsPage() {
 
         {filtered ? (
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-            <span className="text-body-sm text-ink-500">Active filters</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-400">
+              Active filters
+            </span>
             {query.search ? <Badge variant="info">Title: {query.search}</Badge> : null}
             {query.status ? <Badge variant="neutral">{query.status}</Badge> : null}
             {query.accessLevel ? <Badge variant="neutral">{query.accessLevel}</Badge> : null}
@@ -369,16 +413,16 @@ export function DocumentsPage() {
       ) : null}
 
       {loading ? (
-        <div className="space-y-2 rounded-card border border-line bg-surface p-4 shadow-xs">
+        <div className="space-y-2 rounded-card border border-line bg-surface p-5 shadow-card">
           {Array.from({ length: 6 }).map((_, index) => (
             <Skeleton key={index} className="h-12 w-full" />
           ))}
         </div>
       ) : documents.length === 0 ? (
-        <div className="rounded-card border border-line bg-surface p-5 shadow-xs">
+        <div className="rounded-card border border-line bg-surface p-4 shadow-card">
           <EmptyState
-            className="min-h-[20rem] bg-surface-container-low"
-            icon={<FileSearch aria-hidden="true" />}
+            className="min-h-[20rem]"
+            icon={<FileSearch className="size-5 text-ink-400" aria-hidden="true" />}
             title={filtered ? 'No documents match these filters' : 'No documents indexed yet'}
             description={
               filtered
@@ -402,98 +446,172 @@ export function DocumentsPage() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
-          <Table>
-            <TableHead>
-              <TableRow className="hover:bg-muted">
-                <TableHeaderCell>Document</TableHeaderCell>
-                <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Access</TableHeaderCell>
-                <TableHeaderCell className="hidden md:table-cell">Chunks</TableHeaderCell>
-                <TableHeaderCell className="hidden lg:table-cell">Size</TableHeaderCell>
-                <TableHeaderCell className="hidden xl:table-cell">Uploaded</TableHeaderCell>
-                <TableHeaderCell className="w-24 text-right">Actions</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        <div className="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          {isCompact ? (
+            <div className="divide-y divide-line">
               {documents.map((document) => (
-                <TableRow key={document.id}>
-                  <TableCell className="max-w-[22rem]">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-surface-container-low text-action">
-                        <FileText aria-hidden="true" className="size-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <button
-                          type="button"
-                          className="block max-w-full truncate text-left text-label-md text-ink-900 hover:text-action hover:underline"
-                          onClick={() => openDetail(document)}
-                        >
-                          {document.title}
-                        </button>
-                        <p className="truncate text-body-sm text-ink-500">
-                          {document.filename} · {formatBytes(document.size_bytes)}
-                        </p>
-                        {document.status === 'failed' && document.error ? (
-                          <p className="truncate text-body-sm text-danger-text">{document.error}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <DocumentStatusBadge status={document.status} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col items-start gap-1">
-                      <DocumentAccessBadge level={document.access_level} />
-                      {document.access_level === 'restricted' && document.groups.length > 0 ? (
-                        <span className="text-body-sm text-ink-500">
-                          {document.groups.map((group) => group.name).join(', ')}
-                        </span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <span className="tabular">{document.chunk_count.toLocaleString()}</span>
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">
-                    <span className="tabular">{formatBytes(document.size_bytes)}</span>
-                  </TableCell>
-                  <TableCell className="hidden xl:table-cell">
-                    <span className="whitespace-nowrap">{formatDate(document.created_at)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center justify-end gap-1">
-                      <IconButton
-                        aria-label={`Download ${document.title}`}
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void handleDownload(document)}
-                      >
-                        <Download aria-hidden="true" />
-                      </IconButton>
-                      <IconButton
-                        aria-label={`Open ${document.title}`}
-                        variant="ghost"
-                        size="sm"
+                <article key={document.id} className="p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-canvas-subtle text-action">
+                      <FileText aria-hidden="true" className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        className="block max-w-full truncate text-left text-label-md font-medium text-ink-900 transition-fluid hover:text-action hover:underline hover:underline-offset-2"
                         onClick={() => openDetail(document)}
                       >
-                        <ChevronRight aria-hidden="true" />
-                      </IconButton>
+                        {document.title}
+                      </button>
+                      <p className="truncate text-body-sm text-ink-500">
+                        {document.filename} · {formatBytes(document.size_bytes)}
+                      </p>
+                      {document.status === 'failed' && document.error ? (
+                        <p className="mt-0.5 line-clamp-2 text-body-sm text-danger-text">
+                          {document.error}
+                        </p>
+                      ) : null}
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    <IconButton
+                      aria-label={`Open ${document.title}`}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openDetail(document)}
+                    >
+                      <ChevronRight aria-hidden="true" />
+                    </IconButton>
+                  </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <DocumentStatusBadge status={document.status} />
+                    <DocumentAccessBadge level={document.access_level} />
+                    {document.access_level === 'restricted' && document.groups.length > 0 ? (
+                      <span className="text-[11px] text-ink-500">
+                        {document.groups.map((group) => group.name).join(', ')}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/70 pt-2.5">
+                    <span className="text-[11px] text-ink-500">
+                      {document.chunk_count.toLocaleString()} chunks ·{' '}
+                      {formatDate(document.created_at)}
+                    </span>
+                    <IconButton
+                      aria-label={`Download ${document.title}`}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void handleDownload(document)}
+                    >
+                      <Download aria-hidden="true" />
+                    </IconButton>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeaderCell>Document</TableHeaderCell>
+                    <TableHeaderCell>Status</TableHeaderCell>
+                    <TableHeaderCell>Access</TableHeaderCell>
+                    <TableHeaderCell className="hidden md:table-cell">Chunks</TableHeaderCell>
+                    <TableHeaderCell className="hidden lg:table-cell">Size</TableHeaderCell>
+                    <TableHeaderCell className="hidden xl:table-cell">Uploaded</TableHeaderCell>
+                    <TableHeaderCell className="w-24 text-right">Actions</TableHeaderCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {documents.map((document) => (
+                    <TableRow key={document.id}>
+                      <TableCell className="max-w-[24rem]">
+                        <div className="flex items-center gap-3">
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-line bg-canvas-subtle text-action">
+                            <FileText aria-hidden="true" className="size-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <button
+                              type="button"
+                              className="block max-w-full truncate text-left text-label-md font-medium text-ink-900 transition-fluid hover:text-action hover:underline hover:underline-offset-2"
+                              onClick={() => openDetail(document)}
+                            >
+                              {document.title}
+                            </button>
+                            <p className="truncate text-body-sm text-ink-500">
+                              {document.filename} · {formatBytes(document.size_bytes)}
+                            </p>
+                            {document.status === 'failed' && document.error ? (
+                              <p className="truncate text-body-sm text-danger-text">
+                                {document.error}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <DocumentStatusBadge status={document.status} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start gap-1">
+                          <DocumentAccessBadge level={document.access_level} />
+                          {document.access_level === 'restricted' && document.groups.length > 0 ? (
+                            <span className="text-body-sm text-ink-500">
+                              {document.groups.map((group) => group.name).join(', ')}
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <span className="tabular text-ink-600">
+                          {document.chunk_count.toLocaleString()}
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <span className="tabular text-ink-600">
+                          {formatBytes(document.size_bytes)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        <span className="whitespace-nowrap text-ink-600">
+                          {formatDate(document.created_at)}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          <IconButton
+                            aria-label={`Download ${document.title}`}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleDownload(document)}
+                          >
+                            <Download aria-hidden="true" />
+                          </IconButton>
+                          <IconButton
+                            aria-label={`Open ${document.title}`}
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openDetail(document)}
+                          >
+                            <ChevronRight aria-hidden="true" />
+                          </IconButton>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-canvas-subtle/50 px-4 py-3">
             <p className="text-body-sm text-ink-500">
               Showing{' '}
-              <span className="tabular text-ink-700">
+              <span className="tabular font-medium text-ink-700">
                 {(query.page - 1) * PAGE_SIZE + 1}–{Math.min(query.page * PAGE_SIZE, total)}
               </span>{' '}
-              of <span className="tabular text-ink-700">{total.toLocaleString()}</span>
+              of <span className="tabular font-medium text-ink-700">{total.toLocaleString()}</span>
             </p>
             <Pagination
               page={query.page}

@@ -1,21 +1,28 @@
 import { type HTMLAttributes } from 'react';
 
+type CardElevation = 'flat' | 'raised' | 'elevated' | 'floating';
+
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  elevation?: 'flat' | 'raised';
+  elevation?: CardElevation;
 }
 
-export function Card({ elevation = 'raised', className = '', ...props }: CardProps) {
-  const styles =
-    elevation === 'raised'
-      ? 'border border-line bg-surface shadow-xs'
-      : 'border border-line bg-surface-container-low';
+const elevationStyles: Record<CardElevation, string> = {
+  flat: 'border border-line bg-canvas-subtle shadow-inset',
+  raised: 'border border-line bg-surface shadow-card',
+  elevated: 'border border-line bg-surface shadow-elevated',
+  floating: 'border border-line bg-surface shadow-floating',
+};
 
-  return <div className={`rounded-card ${styles} ${className}`} {...props} />;
+export function Card({ elevation = 'raised', className = '', ...props }: CardProps) {
+  return <div className={`rounded-card ${elevationStyles[elevation]} ${className}`} {...props} />;
 }
 
 export function CardHeader({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={`flex flex-col gap-1 border-b border-line px-6 py-4 ${className}`} {...props} />
+    <div
+      className={`flex flex-col gap-1 border-b border-line px-5 py-4 sm:px-6 ${className}`}
+      {...props}
+    />
   );
 }
 
@@ -27,17 +34,17 @@ export function CardDescription({
   className = '',
   ...props
 }: HTMLAttributes<HTMLParagraphElement>) {
-  return <p className={`text-body-sm text-ink-500 ${className}`} {...props} />;
+  return <p className={`text-body-sm leading-relaxed text-ink-500 ${className}`} {...props} />;
 }
 
 export function CardContent({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={`px-6 py-5 ${className}`} {...props} />;
+  return <div className={`px-5 py-4 sm:px-6 sm:py-5 ${className}`} {...props} />;
 }
 
 export function CardFooter({ className = '', ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`flex items-center justify-between gap-3 border-t border-line px-6 py-4 ${className}`}
+      className={`flex items-center justify-between gap-3 border-t border-line px-5 py-4 sm:px-6 ${className}`}
       {...props}
     />
   );

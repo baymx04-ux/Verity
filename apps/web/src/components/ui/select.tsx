@@ -6,7 +6,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
     <span className={`relative inline-flex w-full ${className}`}>
       <select
         ref={ref}
-        className="h-10 w-full appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-body-md text-ink-900 shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/30 disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-10 w-full appearance-none rounded-control border border-line bg-surface pl-3 pr-9 text-body-md text-ink-900 shadow-inset transition-fluid hover:border-line-strong focus-visible:border-action-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/20 disabled:cursor-not-allowed disabled:opacity-50"
         {...props}
       >
         {children}

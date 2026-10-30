@@ -31,7 +31,7 @@ export function Avatar({ name, email, size = 'md', className = '' }: AvatarProps
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex shrink-0 select-none items-center justify-center rounded-full border border-line bg-action-soft font-semibold uppercase tracking-[0.02em] text-action ${sizes[size]} ${className}`}
+      className={`inline-flex shrink-0 select-none items-center justify-center rounded-full border border-action-border bg-action-tint font-semibold uppercase tracking-[0.02em] text-action ${sizes[size]} ${className}`}
     >
       {value}
     </span>

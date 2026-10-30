@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,6 +58,32 @@ describe('MessageItem citations', () => {
 
     await userEvent.click(chip);
     expect(onSelectCitation).toHaveBeenCalledWith(0);
+  });
+
+  it('keeps citation chips inline with list items and paragraphs', () => {
+    renderMessage(
+      assistantMessage({
+        content: [
+          'Verity provides a one-time stipend that can be used to purchase [1], [6]:',
+          '',
+          '- A desk [1]',
+          '- A chair [1]',
+          '',
+          'Employees must keep receipts [1].',
+        ].join('\n'),
+        citations: [citation, { ...citation, id: 'chunk-6', page: 9 }],
+      }),
+    );
+
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(within(item).getByRole('button', { name: /\[1\]/i })).toBeInTheDocument();
+    }
+
+    const paragraphs = screen.getAllByText(/Verity provides|Employees must keep/);
+    expect(paragraphs).toHaveLength(2);
+    expect(within(paragraphs[0]!).getByRole('button', { name: /\[6\]/i })).toBeInTheDocument();
   });
 
   it('labels a refusal honestly and does not claim attestation', () => {

@@ -86,10 +86,10 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
       id={`sql-panel-${panelId}`}
     >
       <summary
-        className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-label-md text-ink-600 hover:bg-muted [&::-webkit-details-marker]:hidden"
+        className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-label-md text-ink-700 transition-colors hover:bg-canvas-subtle [&::-webkit-details-marker]:hidden"
         aria-label="View generated SQL and execution details"
       >
-        <Database aria-hidden="true" className="size-4 shrink-0 text-primary" />
+        <Database aria-hidden="true" className="size-4 shrink-0 text-action" />
         <span className="flex-1">View generated SQL &amp; execution details</span>
         <span className="font-mono text-label-sm text-ink-400">{result.execution_ms}ms</span>
         <ChevronDown
@@ -105,11 +105,11 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-muted hover:text-ink-700"
+            className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-inset hover:text-ink-900"
             aria-label="Copy SQL to clipboard"
           >
             {copied ? (
-              <Check aria-hidden="true" className="size-3.5 text-success" />
+              <Check aria-hidden="true" className="size-3.5 text-verified" />
             ) : (
               <Copy aria-hidden="true" className="size-3.5" />
             )}
@@ -122,12 +122,12 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
         <div className="mt-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-label-sm uppercase tracking-wider text-ink-400">Results</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-label-sm text-ink-600">
+            <span className="rounded-full border border-line bg-canvas-subtle px-2 py-0.5 font-mono text-label-sm text-ink-600">
               {result.row_count} row{result.row_count !== 1 ? 's' : ''}
             </span>
             {result.truncated && (
               <span
-                className="flex items-center gap-1 rounded-full bg-warning-subtle px-2 py-0.5 text-label-sm text-warning"
+                className="flex items-center gap-1 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-label-sm text-warning-text"
                 title="Results were capped at 200 rows. Download CSV to see more."
               >
                 <AlertTriangle aria-hidden="true" className="size-3" />
@@ -139,7 +139,7 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
             <button
               type="button"
               onClick={handleCsvDownload}
-              className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-muted hover:text-ink-700"
+              className="flex items-center gap-1.5 rounded-control px-2 py-1 text-label-sm text-ink-500 transition-colors hover:bg-inset hover:text-ink-900"
               aria-label="Download results as CSV"
             >
               <Download aria-hidden="true" className="size-3.5" />
@@ -186,18 +186,18 @@ function SqlHighlight({ sql }: { sql: string }) {
   const parts = sql.split(SQL_TOKEN);
   return (
     <pre
-      className="overflow-x-auto rounded-control bg-muted p-3 font-mono text-[12px] leading-relaxed text-ink-700"
+      className="overflow-x-auto rounded-control border border-ink-900 bg-ink-900 p-3.5 font-mono text-[12px] leading-relaxed text-slate-100 shadow-inset"
       aria-label="Generated SQL query"
     >
       {parts.map((part, index) => {
         if (!part) return null;
         let className = '';
         if (index % 2 === 1) {
-          if (/^--/.test(part)) className = 'text-ink-400 italic';
-          else if (/^'/.test(part)) className = 'text-amber-700';
-          else if (/^business_ro\./i.test(part)) className = 'text-emerald-700';
-          else if (/^\d/.test(part)) className = 'text-violet-700';
-          else className = 'font-semibold text-sky-700';
+          if (/^--/.test(part)) className = 'text-slate-500 italic';
+          else if (/^'/.test(part)) className = 'text-amber-300';
+          else if (/^business_ro\./i.test(part)) className = 'text-emerald-300';
+          else if (/^\d/.test(part)) className = 'text-sky-300';
+          else className = 'font-semibold text-sky-300';
         }
         return (
           <span key={index} className={className}>
@@ -229,13 +229,13 @@ function ResultTable({ columns, rows, sortCol, sortDir, onSort }: ResultTablePro
       aria-label="Query result table"
     >
       <table className="w-full text-left text-body-sm" id="sql-result-table">
-        <thead className="sticky top-0 border-b border-line bg-muted">
+        <thead className="sticky top-0 border-b border-line bg-canvas-subtle">
           <tr>
             {columns.map((col) => (
               <th
                 key={col}
                 scope="col"
-                className="cursor-pointer select-none px-3 py-2 font-medium uppercase tracking-wider text-ink-400 transition-colors hover:text-ink-700"
+                className="cursor-pointer select-none px-3 py-2 font-medium uppercase tracking-wider text-ink-500 transition-colors hover:text-ink-900"
                 onClick={() => onSort(col)}
                 aria-sort={
                   sortCol === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'
@@ -244,7 +244,7 @@ function ResultTable({ columns, rows, sortCol, sortDir, onSort }: ResultTablePro
                 <span className="flex items-center gap-1">
                   {col}
                   {sortCol === col && (
-                    <span aria-hidden="true" className="font-mono text-ink-300">
+                    <span aria-hidden="true" className="font-mono text-ink-400">
                       {sortDir === 'asc' ? '↑' : '↓'}
                     </span>
                   )}
@@ -255,10 +255,7 @@ function ResultTable({ columns, rows, sortCol, sortDir, onSort }: ResultTablePro
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map((row, ri) => (
-            <tr
-              key={ri}
-              className="transition-colors hover:bg-muted"
-            >
+            <tr key={ri} className="transition-colors hover:bg-canvas-subtle/70">
               {columns.map((col) => {
                 const val = row[col];
                 const isNum = typeof val === 'number';
@@ -269,7 +266,7 @@ function ResultTable({ columns, rows, sortCol, sortDir, onSort }: ResultTablePro
                     title={val != null ? String(val) : ''}
                   >
                     {val == null ? (
-                      <span className="text-ink-300">—</span>
+                      <span className="text-ink-400">—</span>
                     ) : isNum ? (
                       formatNumber(val)
                     ) : (
