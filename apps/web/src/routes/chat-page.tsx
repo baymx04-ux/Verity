@@ -607,11 +607,11 @@ export function ChatPage() {
                     <p className="mt-2 text-body-sm text-ink-500">Retrieving saved messages…</p>
                   </div>
                 ) : messages.length === 0 && !isStreaming ? (
-                  <div className="mx-auto max-w-xl py-8 sm:py-12">
+                  <div className="mx-auto max-w-2xl py-8 sm:py-12">
                     <EmptyState
                       icon={<Sparkles aria-hidden="true" />}
                       title="Your first answer starts here"
-                      description="Ask anything: Verity routes document questions to cited passages, data questions to safe read-only SQL, and mixed questions to both."
+                      description="Ask anything about your documents and data. Verity routes document questions to cited passages, data questions to safe read-only SQL, and mixed questions to both."
                       action={
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           <Badge variant="verified">Grounded answers</Badge>
@@ -623,7 +623,7 @@ export function ChatPage() {
 
                     <div className="mt-6 space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Suggested questions from the demo dataset
+                        Try one of these
                       </p>
                       <div className="grid gap-2 sm:grid-cols-2">
                         {DEMO_PROMPTS.map((prompt) => (
@@ -631,7 +631,7 @@ export function ChatPage() {
                             key={prompt.text}
                             type="button"
                             onClick={() => handleSend(prompt.text, prompt.mode)}
-                            className="flex items-start gap-2.5 rounded-lg border border-slate-200/90 bg-white p-3 text-left text-body-sm text-slate-700 shadow-xs transition-colors hover:border-sky-300 hover:bg-sky-50/40 hover:text-sky-900"
+                            className="flex items-start gap-2.5 rounded-lg border border-slate-200/90 bg-white p-3 text-left text-body-sm text-slate-700 shadow-xs transition-fluid hover:border-sky-300 hover:bg-sky-50/40 hover:text-sky-900"
                           >
                             {prompt.text.includes('revenue') ||
                             prompt.text.includes('return rate') ? (

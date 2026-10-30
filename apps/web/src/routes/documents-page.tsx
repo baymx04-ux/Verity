@@ -268,8 +268,8 @@ export function DocumentsPage() {
             <Badge variant="neutral">{total.toLocaleString()} indexed sources</Badge>
           </div>
           <p className="mt-1 max-w-2xl text-body-md text-ink-500">
-            Upload, parse, and index the source material Verity is allowed to cite. Access grants
-            are enforced for every reader.
+            Upload policy, handbook, and product documents. Verity parses, chunks, and embeds each
+            one so answers can cite it. Access grants are enforced for every reader.
           </p>
         </div>
         {canUpload ? (

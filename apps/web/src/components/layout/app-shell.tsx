@@ -94,7 +94,7 @@ export function AppShell() {
 
       <footer className="hidden border-t border-line bg-surface/60 md:block">
         <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-2 px-6 py-4 text-body-sm text-ink-500 sm:flex-row sm:items-center sm:justify-between lg:px-8">
-          <span>Verity · local demo environment</span>
+          <span>Verity · personal workspace</span>
           <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>Grounded answers, cited sources</span>
             <span aria-hidden="true" className="hidden size-1 rounded-full bg-ink-400 sm:block" />

@@ -44,7 +44,7 @@ export function LoginPage() {
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 401
-          ? 'That email and password combination did not match an active account.'
+          ? 'That email and password did not match an active account.'
           : 'Could not sign in right now. Check your connection and try again.',
       );
     } finally {
@@ -69,6 +69,7 @@ export function LoginPage() {
             src="/verity-logo.png"
             alt="Verity"
             className="size-9"
+            aria-hidden="true"
           />
           <div className="leading-tight">
             <p className="font-display text-lg font-semibold tracking-[-0.02em]">Verity</p>
@@ -80,7 +81,7 @@ export function LoginPage() {
 
         <div className="relative max-w-md">
           <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/60">
-            Enterprise knowledge, grounded
+            Your documents, your data, one question at a time
           </p>
           <h1 className="font-display text-4xl font-semibold leading-[1.08] tracking-[-0.03em]">
             Answers with receipts, not guesses.
@@ -102,7 +103,7 @@ export function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative text-body-sm text-white/50">Verity · local demo environment</p>
+        <p className="relative text-body-sm text-white/50">Verity · personal workspace</p>
       </section>
 
       <section className="flex items-center justify-center px-5 py-10 sm:px-8">
@@ -112,6 +113,7 @@ export function LoginPage() {
               src="/verity-logo.png"
               alt="Verity"
               className="size-8"
+              aria-hidden="true"
             />
             <span className="font-display text-lg font-semibold tracking-[-0.02em] text-ink-900">
               Verity
@@ -184,7 +186,7 @@ export function LoginPage() {
               {import.meta.env.DEV ? (
                 <div className="mt-6 border-t border-line pt-5">
                   <p className="text-label-sm uppercase tracking-[0.04em] text-ink-500">
-                    Demo accounts
+                    Try it with
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {DEMO_ACCOUNTS.map((account) => (

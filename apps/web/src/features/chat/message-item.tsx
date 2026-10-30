@@ -143,7 +143,7 @@ export function MessageItem({
 
   if (message.role === 'user') {
     return (
-      <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs transition-colors hover:border-slate-300 sm:p-5">
+      <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs transition-fluid hover:border-slate-300 sm:p-5">
         <header className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs text-ink-500">
           <div className="flex items-center gap-2">
             <span className="flex size-6 items-center justify-center rounded-full bg-slate-100 text-slate-700">
@@ -216,7 +216,7 @@ export function MessageItem({
           : 'warning';
 
   return (
-    <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs sm:p-5">
+    <article className="rounded-lg border border-slate-200/80 bg-white p-4 shadow-xs transition-fluid sm:p-5">
       <header className="flex items-center justify-between pb-3 border-b border-slate-100 text-xs text-ink-500">
         <div className="flex items-center gap-2">
           <span className="flex size-6 items-center justify-center rounded-full bg-sky-50 text-sky-600">
