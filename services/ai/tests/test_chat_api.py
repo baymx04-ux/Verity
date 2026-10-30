@@ -44,7 +44,7 @@ def chat_client(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> TestClie
     )
 
     async def fake_retrieve(
-        self: object, question: str, access: object, *, trace: object = None
+        self: object, question: str, access: object, *, trace: object = None, **kwargs: object
     ) -> RetrievalResult:
         return RetrievalResult(
             chunks=[chunk],

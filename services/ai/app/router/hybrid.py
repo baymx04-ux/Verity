@@ -116,7 +116,7 @@ class HybridChatService:
         )
 
         doc_task = asyncio.create_task(
-            self._retrieve(question, access, trace),
+            self._retrieve(question, access, trace, standalone=not history),
             name="hybrid-documents",
         )
         sql_task = asyncio.create_task(
@@ -390,9 +390,10 @@ class HybridChatService:
         question: str,
         access: AccessContext,
         trace: Trace,
+        standalone: bool = True,
     ) -> RetrievalResult:
         with trace.span("hybrid_retrieval"):
-            return await self._retrieval.retrieve(question, access)
+            return await self._retrieval.retrieve(question, access, trace=trace, standalone=standalone)
 
     def _done(
         self,

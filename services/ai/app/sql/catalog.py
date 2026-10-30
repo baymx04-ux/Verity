@@ -238,7 +238,7 @@ async def _fetch_view_columns(
         await cur.execute(
             """
             SELECT
-              c.table_name,
+              c.table_name AS view_name,
               c.column_name,
               c.data_type,
               c.is_nullable = 'YES' AS nullable,

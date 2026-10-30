@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 import { useAuth } from '../../features/auth/use-auth';
 import { EnvironmentBadge } from './environment-badge';
+import { OnlineStatusBanner } from './online-status-banner';
 import { UserMenu } from './user-menu';
 
 interface NavItem {
@@ -28,6 +29,7 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-ink-900">
+      <OnlineStatusBanner />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-surface focus:px-4 focus:py-2 focus:text-label-md focus:text-action focus:shadow-dropdown"

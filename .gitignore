@@ -20,6 +20,13 @@ backups/
 .vscode/
 playwright-report/
 test-results/
+playsession/
 evals/reports/*.md
 evals/reports/*.json
 !evals/reports/.gitkeep
+
+# Playwright
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

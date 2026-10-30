@@ -366,4 +366,36 @@ describe('auth API', () => {
     expect(patched.status).toBe(200);
     expect(patched.body.user.role).toBe('viewer');
   });
+
+  it('prevents role escalation by non-admin users', async () => {
+    const app = createTestApp(db);
+
+    // Viewer cannot list users
+    const viewer = await login(app, 'viewer@verity.dev');
+    const viewerList = await viewer.agent
+      .get('/api/auth/users')
+      .set('Authorization', `Bearer ${viewer.accessToken}`);
+    expect(viewerList.status).toBe(403);
+
+    // Analyst cannot change another user's role
+    const analyst = await login(app, 'analyst@verity.dev');
+    const analystPatch = await analyst.agent
+      .patch('/api/auth/users/user-admin/role')
+      .set('Authorization', `Bearer ${analyst.accessToken}`)
+      .send({ role: 'viewer' });
+    expect(analystPatch.status).toBe(403);
+
+    // Viewer cannot change any role
+    const viewerPatch = await viewer.agent
+      .patch('/api/auth/users/user-analyst/role')
+      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .send({ role: 'admin' });
+    expect(viewerPatch.status).toBe(403);
+
+    // Analyst cannot list groups
+    const analystGroups = await analyst.agent
+      .get('/api/auth/groups')
+      .set('Authorization', `Bearer ${analyst.accessToken}`);
+    expect(analystGroups.status).toBe(403);
+  });
 });

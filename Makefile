@@ -9,7 +9,7 @@ AI_PYTHON := $(VENV)/bin/python
 
 .PHONY: help env install up infra down clean ps logs build migrate seed seed-business \
 	seed-all catalog-refresh test test-node test-ai test-integration lint typecheck format \
-	format-check check verify-roles audit routing-eval eval eval-validate
+	format-check check verify-roles audit routing-eval eval eval-validate e2e
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -108,3 +108,6 @@ eval-validate: ## Validate eval datasets offline (no model calls)
 
 routing-eval: ## Measure router accuracy on evals/datasets/routing.jsonl (needs a model key)
 	$(AI_PYTHON) evals/run_routing.py
+
+e2e: ## Run Playwright E2E tests (needs stack running: make up && make seed-all)
+	cd apps/web && npm run e2e

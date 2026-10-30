@@ -39,7 +39,7 @@ class FakeLLMClient(LLMClient):
 async def test_chat_service_refusal_when_low_confidence(settings: Settings) -> None:
     class MockRetrieval:
         async def retrieve(
-            self, question: str, access: AccessContext, *, trace: object = None
+            self, question: str, access: AccessContext, *, trace: object = None, **kwargs: Any
         ) -> RetrievalResult:
             return RetrievalResult(chunks=[], citations=[], low_confidence=True, best_score=0.0)
 
@@ -95,7 +95,7 @@ async def test_chat_service_treats_model_refusal_as_low_confidence(settings: Set
 
     class MockRetrieval:
         async def retrieve(
-            self, question: str, access: AccessContext, *, trace: object = None
+            self, question: str, access: AccessContext, *, trace: object = None, **kwargs: Any
         ) -> RetrievalResult:
             return RetrievalResult(
                 chunks=[chunk],
@@ -152,7 +152,7 @@ async def test_chat_service_streams_answer_with_citations(settings: Settings) ->
 
     class MockRetrieval:
         async def retrieve(
-            self, question: str, access: AccessContext, *, trace: object = None
+            self, question: str, access: AccessContext, *, trace: object = None, **kwargs: Any
         ) -> RetrievalResult:
             return RetrievalResult(
                 chunks=[chunk],
@@ -211,7 +211,7 @@ async def test_chat_service_reports_and_logs_dropped_citations(settings: Setting
 
     class MockRetrieval:
         async def retrieve(
-            self, question: str, access: AccessContext, *, trace: object = None
+            self, question: str, access: AccessContext, *, trace: object = None, **kwargs: Any
         ) -> RetrievalResult:
             return RetrievalResult(
                 chunks=[chunk],

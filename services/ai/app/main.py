@@ -8,6 +8,7 @@ from app.core.logging import configure_logging
 from app.ingestion.embeddings import GoogleEmbeddingClient
 from app.ingestion.service import build_ingestion_service
 from app.llm.factory import build_llm_client
+from app.rag.question_cache import build_question_cache
 from app.rag.rerank import build_reranker
 from app.rag.retrieval import PostgresRetrievalStore, RetrievalService
 from app.rag.service import ChatService
@@ -43,11 +44,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     llm = build_llm_client(resolved)
     embeddings = GoogleEmbeddingClient(resolved)
+    question_cache = build_question_cache(resolved)
     retrieval = RetrievalService(
         resolved,
         embeddings=embeddings,
         store=PostgresRetrievalStore(resolved),
         reranker=build_reranker(resolved),
+        question_cache=question_cache,
     )
     app.state.chat_service = ChatService(
         resolved, retrieval=retrieval, llm=llm, trace_exporter=trace_exporter

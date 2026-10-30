@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from app.core.config import Settings
 from app.core.tracing import Trace
 from app.ingestion.embeddings import GoogleEmbeddingClient
+from app.rag.question_cache import QuestionCache, build_question_cache
 from app.rag.rerank import Reranker, build_citations
 from app.rag.types import AccessContext, RetrievalResult, RetrievedChunk
 
@@ -220,11 +221,13 @@ class RetrievalService:
         embeddings: GoogleEmbeddingClient,
         store: RetrievalStore,
         reranker: Reranker,
+        question_cache: QuestionCache | None = None,
     ) -> None:
         self._settings = settings
         self._embeddings = embeddings
         self._store = store
         self._reranker = reranker
+        self._question_cache = question_cache
 
     async def retrieve(
         self,
@@ -232,8 +235,32 @@ class RetrievalService:
         access: AccessContext,
         *,
         trace: Trace | None = None,
+        standalone: bool = True,
     ) -> RetrievalResult:
         started = time.perf_counter()
+
+        # Cache hit skips embedding, retrieval, and rerank entirely.
+        if standalone and self._question_cache is not None:
+            cached = await self._question_cache.get(
+                question=question,
+                role=access.role,
+                group_ids=access.group_ids,
+                model=self._embeddings.model,
+                dimensions=self._embeddings.dimensions,
+            )
+            if cached is not None:
+                spans = dict(cached.spans)
+                spans["question_cache_hit"] = 1
+                with trace.span("retrieval_cache_hit") if trace is not None else nullcontext():
+                    pass
+                return RetrievalResult(
+                    chunks=cached.chunks,
+                    citations=cached.citations,
+                    low_confidence=cached.low_confidence,
+                    best_score=cached.best_score,
+                    spans=spans,
+                )
+
         embedding: list[float] | None = None
         try:
             with trace.span("retrieval_embedding") if trace is not None else nullcontext():
@@ -263,13 +290,26 @@ class RetrievalService:
             "retrieval_fusion": fusion_ms,
         }
         if not fused:
-            return RetrievalResult(
+            result = RetrievalResult(
                 chunks=[],
                 citations=[],
                 low_confidence=True,
                 best_score=0.0,
                 spans=spans,
             )
+            if standalone and self._question_cache is not None:
+                ttl = max(0, self._settings.question_cache_ttl_seconds)
+                if ttl > 0:
+                    await self._question_cache.set(
+                        question=question,
+                        role=access.role,
+                        group_ids=access.group_ids,
+                        model=self._embeddings.model,
+                        dimensions=self._embeddings.dimensions,
+                        result=result,
+                        ttl_seconds=ttl,
+                    )
+            return result
 
         candidate_limit = max(
             self._settings.rerank_top_n,
@@ -288,13 +328,26 @@ class RetrievalService:
         best_score = reranked[0].score if reranked else 0.0
         low_confidence = not reranked or best_score < self._settings.min_rerank_score
         citations = [] if low_confidence else build_citations(reranked)
-        return RetrievalResult(
+        result = RetrievalResult(
             chunks=reranked,
             citations=citations,
             low_confidence=low_confidence,
             best_score=best_score,
             spans=spans,
         )
+        if standalone and self._question_cache is not None:
+            ttl = max(0, self._settings.question_cache_ttl_seconds)
+            if ttl > 0:
+                await self._question_cache.set(
+                    question=question,
+                    role=access.role,
+                    group_ids=access.group_ids,
+                    model=self._embeddings.model,
+                    dimensions=self._embeddings.dimensions,
+                    result=result,
+                    ttl_seconds=ttl,
+                )
+        return result
 
 
 def to_vector_literal(values: list[float]) -> str:

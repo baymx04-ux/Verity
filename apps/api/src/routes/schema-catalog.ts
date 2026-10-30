@@ -5,6 +5,7 @@ import type { AppConfig } from '../config/env';
 import type { Logger } from '../config/logger';
 import type { InternalAiClient } from '../ai-client/internal';
 import { authenticate, requireRole } from '../middleware/auth';
+import { adminRateLimiter } from '../middleware/rate-limit';
 
 export interface SchemaCatalogRouterDeps {
   ai: InternalAiClient;
@@ -37,6 +38,7 @@ export function createSchemaCatalogRouter({ ai, config, logger }: SchemaCatalogR
   router.get(
     '/',
     ...requireAdmin,
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const data = await ai.getSchemaCatalog();
@@ -51,6 +53,7 @@ export function createSchemaCatalogRouter({ ai, config, logger }: SchemaCatalogR
   router.post(
     '/refresh',
     ...requireAdmin,
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const data = await ai.refreshSchemaCatalog();
@@ -65,6 +68,7 @@ export function createSchemaCatalogRouter({ ai, config, logger }: SchemaCatalogR
   router.patch(
     '/:viewName',
     ...requireAdmin,
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (req: Request, res: Response, next: NextFunction) => {
       const parsed = catalogPatchSchema.safeParse(req.body);
       if (!parsed.success) {

@@ -1,9 +1,9 @@
 # Verity Architecture
 
-**Status:** Phase 0–3 are implemented and covered by the Node and Python test
-suites. Phase 4 (text-to-SQL) is next. Docker Compose cold-start verification and
-a measured time-to-first-token run remain Phase 7 items. This document describes
-the current shape; behavioral source of truth: [`../plan.md`](../plan.md),
+**Status:** Phases 0–6 are implemented and covered by the Node and Python test
+suites. Phase 7 (hardening, accessibility, final docs, Compose cold-start
+verification) is in progress. This document describes the current shape; behavioral
+source of truth: [`implementation-plan.md`](./implementation-plan.md),
 ingestion details: [`ingestion.md`](./ingestion.md), retrieval/chat details:
 [`retrieval.md`](./retrieval.md).
 
@@ -17,21 +17,26 @@ web (React 18 + Vite build, nginx)
   │  /api
   ▼
 api (Express + TypeScript, gateway)
-  ├── Postgres 16 + pgvector   app schema (documents, chunks, users, groups, conversations, messages)
-  ├── Redis 7                  queues, caches, rate-limit state
+  ├── Postgres 16 + pgvector   app schema (documents, chunks, users, groups, conversations, messages, feedback)
+  ├── Redis 7                  queues, caches, rate-limit state, question cache
   ├── MinIO                    original uploaded documents
   └── ai (FastAPI, internal)   parsing, chunking, embeddings, hybrid retrieval, generation
         ▲
         │ signed /ingest, /documents/{id}, /chat/stream
         │
+Langfuse (v3) ──────────────────┘
+  ├── Postgres + ClickHouse     trace storage
+  └── langfuse-worker           trace processing
 worker (Node process) ────────┘
   └── BullMQ consumer on Redis
 ```
 
-The browser never talks to Postgres, Redis, MinIO, or the AI service directly.
-The AI service is internal-only; the gateway owns authentication, authorization,
-uploads, SSE, and the public API. Text-to-SQL execution will use a separate
-`verity_sql_ro` connection that can only read vetted `business_ro` views.
+The browser never talks to Postgres, Redis, MinIO, the AI service, or Langfuse
+directly. The AI service is internal-only; the gateway owns authentication,
+authorization, uploads, SSE, and the public API. Text-to-SQL execution uses a
+separate `verity_sql_ro` connection that can only read vetted `business_ro`
+views. Traces from every chat flow are exported to Langfuse (fail-open: a
+`NoopTraceExporter` is used when Langfuse keys are absent).
 
 ## Authentication and sessions
 
@@ -131,13 +136,13 @@ in [`retrieval.md`](./retrieval.md).
 | `apps/web`        | Token-based design system, primitives, auth context/silent refresh, router guards, login, shell, documents library with multi-upload/filters/polling/detail editor, grounded chat with streaming, stop/retry/regenerate/copy, citation chips, evidence drawer, feedback, and conversation rail |
 | `apps/api`        | Express gateway with health, auth routes, RBAC middleware, refresh rotation/reuse detection, audit events, document APIs, upload validation, signed AI client, conversations/messages, SSE relay with heartbeat and abort persistence, chat rate limiting, tests                               |
 | `apps/api` worker | Dedicated BullMQ consumer: status transitions, retries/backoff, chunk/page bookkeeping, ingestion audit trail                                                                                                                                                                                  |
-| `services/ai`     | FastAPI `/health`, signed `/ingest`, `DELETE /documents/{id}`, signed `/chat/stream`, parsing, chunking, batched embeddings, hybrid retrieval, RRF, reranking, confidence gate, citation validation, query rewriting                                                                           |
+| `services/ai`     | FastAPI `/health`, signed `/ingest`, `DELETE /documents/{id}`, signed `/chat/stream`, parsing, chunking, batched embeddings, hybrid retrieval, RRF, reranking, confidence gate, citation validation, query rewriting, standalone question cache (Redis) |
 | Postgres          | pgvector, `app` / `business` / `business_ro` schemas, versioned migrations including users/groups/refresh tokens/documents/chunks/ingestion jobs/conversations/messages/feedback                                                                                                               |
 | Roles             | `verity_app` (DML on `app`) and `verity_sql_ro` (SELECT on `business_ro`)                                                                                                                                                                                                                      |
-| Redis             | BullMQ ingestion queue, rate-limit state, embedding cache                                                                                                                                                                                                                                      |
+| Redis             | BullMQ ingestion queue, rate-limit state, embedding cache, question-answer cache for repeated standalone questions |
 | MinIO             | Private bucket bootstrapped by `minio-init`; original documents; separate internal/public presigned URL endpoints                                                                                                                                                                              |
 | Web / API         | Static build served by nginx, `/api` proxy with SSE buffering disabled                                                                                                                                                                                                                         |
-| Langfuse          | Deferred to Phase 6 (plan §16); not faked                                                                                                                                                                                                                                                      |
+| Langfuse          | v3 (Postgres + ClickHouse + worker); trace export from all chat services with fail-open NoopTraceExporter; trace_id persisted on messages for deep links |
 
 ## Database roles
 
@@ -167,10 +172,10 @@ against the exposed Postgres port and Redis).
 - **Phase 1 (implemented):** auth (JWT + rotating refresh cookie), RBAC, app schema tables, design system, app shell.
 - **Phase 2 (implemented):** upload → MinIO → queue → parse → chunk → embed → ready, BullMQ worker, document library UI, access grants, demo corpus.
 - **Phase 3 (implemented):** query rewrite, access-filtered hybrid retrieval, RRF, rerank, confidence gate, citations, SSE chat with stop/retry/regenerate, feedback. Live time-to-first-token measurement remains deferred.
-- **Phase 4:** `business` seed data, `business_ro` views, sqlglot validation, read-only execution, SQL UI.
-- **Phase 5:** router, hybrid answers, conversation memory.
-- **Phase 6:** Langfuse, RAGAS eval harness, metrics, feedback.
-- **Phase 7:** hardening, load tests, accessibility, final docs and Compose cold start.
+- **Phase 4 (implemented):** `business` seed data, `business_ro` views, sqlglot validation, read-only execution, SQL UI.
+- **Phase 5 (implemented):** router, hybrid answers, conversation memory.
+- **Phase 6 (implemented):** Langfuse tracing, RAGAS eval harness, metrics dashboard, feedback capture, eval datasets.
+- **Phase 7 (in progress):** hardening, rate-limit coverage, safety suite expansion, accessibility (Lighthouse ≥90), empty/loading/error/offline states, performance tuning, Playwright E2E, final docs, Compose cold-start verification.
 
 ## Non-goals
 

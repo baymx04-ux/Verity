@@ -45,3 +45,20 @@ export function uploadRateLimiter(limitPerHour = 10) {
     },
   });
 }
+
+/** Admin mutations are limited per authenticated user; schema refresh is expensive. */
+export function adminRateLimiter(limitPerMinute = 30) {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: limitPerMinute,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => (req as AuthRequest).user?.id ?? req.ip ?? 'unknown',
+    message: {
+      error: {
+        code: 'rate_limited',
+        message: `Admin limit reached (${limitPerMinute} requests per minute). Try again shortly.`,
+      },
+    },
+  });
+}

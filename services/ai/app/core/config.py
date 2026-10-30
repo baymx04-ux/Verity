@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     ingest_max_mb: int = 25
 
+    # Question cache TTL seconds (standalone questions only; cached retrieval
+    # result skips embedding + retrieval + rerank on repeat). 0 disables.
+    question_cache_ttl_seconds: int = 0
+
     sql_display_limit: int = 200
     sql_hard_limit: int = 1000
     sql_timeout_ms: int = 5000

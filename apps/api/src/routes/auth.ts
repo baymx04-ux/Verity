@@ -10,6 +10,7 @@ import { issueSession } from '../auth/session';
 import { setRefreshCookie, clearRefreshCookie, readRefreshCookie } from '../auth/cookies';
 import { verifyRefreshToken } from '../auth/jwt';
 import { authenticate } from '../middleware/auth';
+import { adminRateLimiter } from '../middleware/rate-limit';
 import type { AuthRequest } from '../types/auth';
 
 export interface AuthRouterDeps {
@@ -260,7 +261,7 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
     }
   });
 
-  router.get('/users', authenticate(config, logger), async (req: AuthRequest, res, next) => {
+  router.get('/users', authenticate(config, logger), adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN), async (req: AuthRequest, res, next) => {
     try {
       if (!req.user || req.user.role !== 'admin') {
         return res
@@ -283,6 +284,7 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
   router.patch(
     '/users/:id/role',
     authenticate(config, logger),
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (req: AuthRequest, res, next) => {
       try {
         if (!req.user || req.user.role !== 'admin') {
@@ -329,7 +331,7 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
     },
   );
 
-  router.get('/groups', authenticate(config, logger), async (req: AuthRequest, res, next) => {
+  router.get('/groups', authenticate(config, logger), adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN), async (req: AuthRequest, res, next) => {
     try {
       if (!req.user || req.user.role !== 'admin') {
         return res

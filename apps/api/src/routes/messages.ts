@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { Logger } from '../config/logger';
 import { requireAuth } from '../middleware/auth';
+import { adminRateLimiter } from '../middleware/rate-limit';
 import type { ChatService } from '../services/chat';
 import type { AuthRequest } from '../types/auth';
 
@@ -18,10 +19,11 @@ const feedbackSchema = z.object({
 
 export function createMessagesRouter({ chatService, logger }: MessagesRouterOptions): Router {
   const router = Router();
+  const feedbackLimiter = adminRateLimiter(60);
 
   router.use(requireAuth);
 
-  router.post('/:id/feedback', async (req: AuthRequest, res, next) => {
+  router.post('/:id/feedback', feedbackLimiter, async (req: AuthRequest, res, next) => {
     try {
       const parsed = feedbackSchema.safeParse(req.body);
       if (!parsed.success) {

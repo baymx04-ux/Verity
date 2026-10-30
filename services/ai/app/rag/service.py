@@ -98,7 +98,9 @@ class ChatService:
 
         try:
             with trace.span("retrieval"):
-                result = await self._retrieval.retrieve(question, access, trace=trace)
+                result = await self._retrieval.retrieve(
+                    question, access, trace=trace, standalone=not history
+                )
         except Exception as exc:
             logger.exception("retrieval failed trace_id=%s: %s", trace.trace_id, exc)
             yield (

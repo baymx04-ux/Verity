@@ -6,6 +6,7 @@ import type { Logger } from '../config/logger';
 import type { DocumentService } from '../services/documents';
 import { loadAdminUsage } from '../services/metrics';
 import { authenticate, requireRole } from '../middleware/auth';
+import { adminRateLimiter } from '../middleware/rate-limit';
 
 export interface AdminRouterDeps {
   pool: Pool;
@@ -34,6 +35,7 @@ export function createAdminRouter({ pool, documentService, config, logger }: Adm
   router.get(
     '/groups',
     ...requireAdmin,
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (_req: Request, res: Response, next: NextFunction) => {
       try {
         const result = await pool.query(
@@ -54,6 +56,7 @@ export function createAdminRouter({ pool, documentService, config, logger }: Adm
   router.get(
     '/metrics',
     ...requireAdmin,
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
     async (req: Request, res: Response, next: NextFunction) => {
       try {
         const requestedDays = Number(req.query.days);

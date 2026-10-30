@@ -43,14 +43,15 @@ export function Composer({
         <label htmlFor="composer-input" className="sr-only">
           Ask a question
         </label>
-        <Textarea
-          id="composer-input"
-          ref={textareaRef}
-          value={question}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={disabled}
-          placeholder={
+          <Textarea
+            id="composer-input"
+            ref={textareaRef}
+            value={question}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            aria-busy={isStreaming}
+            placeholder={
             mode === 'sql'
               ? 'Ask a data question, e.g. “Revenue by region last quarter”…'
               : mode === 'auto'

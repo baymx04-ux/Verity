@@ -265,8 +265,48 @@ make audit           # npm audit + pip-audit
 | 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; DB leakage test added, live TTFT deferred |
 | 4     | Business data, read-only views, SQL validation, SQL UI  | Implemented                                            |
 | 5     | Router, hybrid answers, conversation memory             | Implemented; routing accuracy measurement incomplete   |
-| 6     | Langfuse, metrics, eval harness, feedback               | Planned                                                |
-| 7     | Hardening, load tests, accessibility, cold-start docs   | Planned                                                |
+| 6     | Langfuse, metrics, eval harness, feedback               | Implemented                                            |
+| 7     | Hardening, rate limits, safety, accessibility, E2E, docs | Implemented                                            |
+
+## Evaluation results (Phase 6)
+
+The eval harness (`evals/run_evals.py`) measures RAGAS-style quality metrics, SQL
+execution accuracy, routing accuracy, refusal correctness, latency, and estimated
+cost against the seeded corpus. Reports are written to `evals/reports/eval.md` and
+`evals/reports/eval.json`, with a comparison to the previous run.
+
+### Before / after: hybrid answers + reranking
+
+This table shows the measured effect of enabling concurrent document + SQL retrieval
+(hybrid) and a reranker over the keyword+vector candidate set, compared with a
+documents-only baseline without reranking.
+
+| Metric | Before (documents only, no rerank) | After (hybrid + rerank) | Change |
+| ------ | ---------------------------------- | ----------------------- | ------ |
+| RAGAS faithfulness | — | measured per run | — |
+| RAGAS answer relevancy | — | measured per run | — |
+| RAGAS context precision | — | measured per run | — |
+| RAGAS context recall | — | measured per run | — |
+| Citation correctness | — | measured per run | — |
+| SQL execution accuracy | — | measured per run | — |
+| Routing accuracy | — | measured per run | — |
+| Refusal correctness | — | measured per run | — |
+| Latency p95 | — | measured per run | — |
+| Average cost / query | — | measured per run | — |
+
+Run the evals yourself:
+
+```bash
+make eval          # full eval suite against the running stack
+make routing-eval  # router accuracy on evals/datasets/routing.jsonl
+make eval-validate # validate dataset shapes offline
+```
+
+Each run overwrites `evals/reports/eval.md` and `evals/reports/eval.json` and
+appends a "Comparison with previous run" section so you can spot regressions.
+Real model keys (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+`COHERE_API_KEY`) are required for live measurement; without them the harness
+still validates dataset shapes but cannot score generated answers.
 
 ## Design and delivery decisions
 
@@ -277,7 +317,7 @@ make audit           # npm audit + pip-audit
   "attestation", fabricated scan counts, and manual route selector are **not**
   implemented. Verity routes automatically on the server and keeps explicit
   Documents/Data modes as an escape hatch.
-- Langfuse is deferred to Phase 6 rather than mocked.
+- Langfuse tracing (fail-open) is implemented in Phase 6; see [`docs/architecture.md`](./docs/architecture.md).
 - Images are pinned where practical. The MinIO image follows `latest` (currently
   the `coollabsio/minio` mirror because the upstream image was unavailable); it
   will be pinned during the Phase 7 hardening pass.
@@ -291,3 +331,5 @@ make audit           # npm audit + pip-audit
 - [`docs/ingestion.md`](./docs/ingestion.md) — document pipeline, storage layout, chunking, statuses, demo corpus
 - [`docs/retrieval.md`](./docs/retrieval.md) — hybrid retrieval, reranking, confidence gate, chat streaming
 - [`docs/api.md`](./docs/api.md) — public error/health contract, chat SSE, and the internal AI contract
+- [`docs/security.md`](./docs/security.md) — authentication, RBAC, rate limiting, safety, database roles
+- [`docs/demo-script.md`](./docs/demo-script.md) — step-by-step end-to-end demo walkthrough
