@@ -65,12 +65,11 @@ export function LoginPage() {
         />
 
         <div className="relative flex items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="flex size-9 items-center justify-center rounded-control border border-white/30 bg-white/10"
-          >
-            <span className="size-2.5 rounded-full bg-white" />
-          </span>
+          <img
+            src="/verity-logo.png"
+            alt="Verity"
+            className="size-9"
+          />
           <div className="leading-tight">
             <p className="font-display text-lg font-semibold tracking-[-0.02em]">Verity</p>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
@@ -109,12 +108,11 @@ export function LoginPage() {
       <section className="flex items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-md">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <span
-              aria-hidden="true"
-              className="flex size-8 items-center justify-center rounded-control bg-action text-white"
-            >
-              <span className="size-1.5 rounded-full bg-white" />
-            </span>
+            <img
+              src="/verity-logo.png"
+              alt="Verity"
+              className="size-8"
+            />
             <span className="font-display text-lg font-semibold tracking-[-0.02em] text-ink-900">
               Verity
             </span>

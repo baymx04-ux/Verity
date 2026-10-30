@@ -43,13 +43,11 @@ export function AppShell() {
             to="/chat"
             className="flex shrink-0 items-center gap-2.5 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-accent/30"
           >
-            <span
-              aria-hidden="true"
-              className="relative flex size-8 items-center justify-center rounded-control bg-action text-white shadow-xs"
-            >
-              <span className="absolute inset-[7px] rounded-[3px] border border-white/70" />
-              <span className="size-1.5 rounded-full bg-white" />
-            </span>
+            <img
+              src="/verity-logo.png"
+              alt="Verity"
+              className="size-8"
+            />
             <span className="leading-tight">
               <span className="block font-display text-[17px] font-semibold tracking-[-0.02em] text-ink-900">
                 Verity
