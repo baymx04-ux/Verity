@@ -11,20 +11,21 @@ export function setRefreshCookie(res: Response, config: AppConfig, token: string
     httpOnly: true,
     secure: config.COOKIE_SECURE,
     sameSite: config.COOKIE_SAME_SITE,
-    path: '/api/auth',
+    path: '/',
     maxAge,
     domain: config.COOKIE_DOMAIN || undefined,
   });
 }
 
 export function clearRefreshCookie(res: Response, config: AppConfig): void {
-  res.clearCookie(REFRESH_COOKIE_NAME, {
+  const options = {
     httpOnly: true,
     secure: config.COOKIE_SECURE,
     sameSite: config.COOKIE_SAME_SITE,
-    path: '/api/auth',
     domain: config.COOKIE_DOMAIN || undefined,
-  });
+  };
+  res.clearCookie(REFRESH_COOKIE_NAME, { ...options, path: '/' });
+  res.clearCookie(REFRESH_COOKIE_NAME, { ...options, path: '/api/auth' });
 }
 
 export function readRefreshCookie(req: Request): string | undefined {

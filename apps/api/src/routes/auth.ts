@@ -6,7 +6,7 @@ import type { AppConfig } from '../config/env';
 import type { Logger } from '../config/logger';
 import { authRateLimiter } from '../middleware/rate-limit';
 import { verifyPassword, hashToken, ipToHash } from '../auth/password';
-import { issueSession } from '../auth/session';
+import { issueSession, validateSession } from '../auth/session';
 import { setRefreshCookie, clearRefreshCookie, readRefreshCookie } from '../auth/cookies';
 import { verifyRefreshToken } from '../auth/jwt';
 import { authenticate } from '../middleware/auth';
@@ -236,6 +236,23 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
     }
   });
 
+  router.get('/verify', async (req, res, next) => {
+    try {
+      const token = readRefreshCookie(req);
+      const session = await validateSession(pool, config, token);
+
+      if (!session.valid || !session.user) {
+        return res
+          .status(401)
+          .json({ error: { code: 'unauthorized', message: 'Authentication required' } });
+      }
+
+      return res.json({ ok: true, user: session.user });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   router.get('/me', authenticate(config, logger), async (req: AuthRequest, res, next) => {
     try {
       if (!req.user) {
@@ -261,25 +278,30 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
     }
   });
 
-  router.get('/users', authenticate(config, logger), adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN), async (req: AuthRequest, res, next) => {
-    try {
-      if (!req.user || req.user.role !== 'admin') {
-        return res
-          .status(403)
-          .json({ error: { code: 'forbidden', message: 'Insufficient permissions' } });
-      }
+  router.get(
+    '/users',
+    authenticate(config, logger),
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
+    async (req: AuthRequest, res, next) => {
+      try {
+        if (!req.user || req.user.role !== 'admin') {
+          return res
+            .status(403)
+            .json({ error: { code: 'forbidden', message: 'Insufficient permissions' } });
+        }
 
-      const result = await pool.query(
-        `SELECT id, email, role, is_active, first_name, last_name, created_at, last_login_at
+        const result = await pool.query(
+          `SELECT id, email, role, is_active, first_name, last_name, created_at, last_login_at
          FROM app.users
          ORDER BY created_at ASC`,
-      );
+        );
 
-      return res.json({ users: result.rows });
-    } catch (error) {
-      return next(error);
-    }
-  });
+        return res.json({ users: result.rows });
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
 
   router.patch(
     '/users/:id/role',
@@ -331,22 +353,27 @@ export function createAuthRouter({ config, logger, pool }: AuthRouterDeps) {
     },
   );
 
-  router.get('/groups', authenticate(config, logger), adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN), async (req: AuthRequest, res, next) => {
-    try {
-      if (!req.user || req.user.role !== 'admin') {
-        return res
-          .status(403)
-          .json({ error: { code: 'forbidden', message: 'Insufficient permissions' } });
-      }
+  router.get(
+    '/groups',
+    authenticate(config, logger),
+    adminRateLimiter(config.ADMIN_RATE_LIMIT_PER_MIN),
+    async (req: AuthRequest, res, next) => {
+      try {
+        if (!req.user || req.user.role !== 'admin') {
+          return res
+            .status(403)
+            .json({ error: { code: 'forbidden', message: 'Insufficient permissions' } });
+        }
 
-      const result = await pool.query(
-        `SELECT id, name, description, created_at FROM app.groups ORDER BY name ASC`,
-      );
-      return res.json({ groups: result.rows });
-    } catch (error) {
-      return next(error);
-    }
-  });
+        const result = await pool.query(
+          `SELECT id, name, description, created_at FROM app.groups ORDER BY name ASC`,
+        );
+        return res.json({ groups: result.rows });
+      } catch (error) {
+        return next(error);
+      }
+    },
+  );
 
   return router;
 }

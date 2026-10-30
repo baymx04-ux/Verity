@@ -17,6 +17,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Spinner } from '../components/ui/spinner';
 import { ApiError } from '../lib/api';
+import { sanitizeRedirectUrl } from '../lib/redirect';
 import { useAuth } from '../features/auth/use-auth';
 
 const DEMO_ACCOUNTS = [
@@ -53,10 +54,17 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as { from?: string } | null)?.from ?? '/chat';
+  const searchParams = new URLSearchParams(location.search);
+  const rawTarget =
+    searchParams.get('redirect') ??
+    searchParams.get('returnUrl') ??
+    searchParams.get('from') ??
+    (location.state as { from?: string } | null)?.from;
+
+  const destination = sanitizeRedirectUrl(rawTarget);
 
   if (status === 'authenticated') {
-    return <Navigate to={from} replace />;
+    return <Navigate to={destination} replace />;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -66,7 +74,7 @@ export function LoginPage() {
 
     try {
       await login(email.trim(), password);
-      navigate(from, { replace: true });
+      navigate(destination, { replace: true });
     } catch (cause) {
       setError(
         cause instanceof ApiError && cause.status === 401

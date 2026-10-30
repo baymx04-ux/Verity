@@ -150,4 +150,108 @@ describe('App auth experience', () => {
 
     expect(await screen.findByText(/did not match an active account/i)).toBeInTheDocument();
   });
+
+  it('preserves the requested URL in redirect query param when accessing protected routes directly', async () => {
+    window.history.pushState({}, '', '/documents');
+    stubFetch((url) => {
+      if (url === '/api/auth/refresh') {
+        return json(401, { error: { code: 'unauthorized', message: 'Missing refresh token' } });
+      }
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+    expect(window.location.search).toBe('?redirect=%2Fdocuments');
+  });
+
+  it('returns user to the preserved requested page after signing in', async () => {
+    window.history.pushState({}, '', '/login?redirect=%2Fdocuments');
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url === '/api/auth/refresh') {
+        return json(401, { error: { code: 'unauthorized', message: 'Missing refresh token' } });
+      }
+      if (url === '/api/auth/login' && init?.method === 'POST') {
+        return json(200, {
+          accessToken: 'access-token',
+          user: { id: 'user-admin', email: 'admin@verity.dev', role: 'admin' },
+        });
+      }
+      if (url === '/api/auth/me') {
+        return json(200, { user: adminUser });
+      }
+      if (url.startsWith('/api/documents')) {
+        return json(200, { documents: [], total: 0 });
+      }
+    });
+
+    render(<App />);
+
+    await user.type(await screen.findByLabelText('Work email'), 'admin@verity.dev');
+    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('heading', { name: 'Documents' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/documents');
+  });
+
+  it('sanitizes external redirect parameter to prevent open redirects', async () => {
+    window.history.pushState({}, '', '/login?redirect=https://evil.com/phish');
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url === '/api/auth/refresh') {
+        return json(401, { error: { code: 'unauthorized', message: 'Missing refresh token' } });
+      }
+      if (url === '/api/auth/login' && init?.method === 'POST') {
+        return json(200, {
+          accessToken: 'access-token',
+          user: { id: 'user-admin', email: 'admin@verity.dev', role: 'admin' },
+        });
+      }
+      if (url === '/api/auth/me') {
+        return json(200, { user: adminUser });
+      }
+    });
+
+    render(<App />);
+
+    await user.type(await screen.findByLabelText('Work email'), 'admin@verity.dev');
+    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Land on safe default /chat instead of evil.com
+    expect(await screen.findByRole('heading', { name: 'Ask Verity' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/chat');
+  });
+
+  it('prevents redirect loops when redirect param points to /login', async () => {
+    window.history.pushState({}, '', '/login?redirect=%2Flogin');
+    const user = userEvent.setup();
+    stubFetch((url, init) => {
+      if (url === '/api/auth/refresh') {
+        return json(401, { error: { code: 'unauthorized', message: 'Missing refresh token' } });
+      }
+      if (url === '/api/auth/login' && init?.method === 'POST') {
+        return json(200, {
+          accessToken: 'access-token',
+          user: { id: 'user-admin', email: 'admin@verity.dev', role: 'admin' },
+        });
+      }
+      if (url === '/api/auth/me') {
+        return json(200, { user: adminUser });
+      }
+    });
+
+    render(<App />);
+
+    await user.type(await screen.findByLabelText('Work email'), 'admin@verity.dev');
+    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Land on safe default /chat instead of looping on /login
+    expect(await screen.findByRole('heading', { name: 'Ask Verity' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/chat');
+  });
 });

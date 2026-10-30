@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 import { FullPageLoader } from '../../components/layout/full-page-loader';
+import { sanitizeRedirectUrl } from '../../lib/redirect';
 import type { Role } from '../../types/auth';
 import { useAuth } from './use-auth';
 
@@ -14,7 +15,15 @@ export function RequireAuth() {
   }
 
   if (status === 'unauthenticated') {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    const fullPath = `${location.pathname}${location.search}${location.hash}`;
+    const destination = sanitizeRedirectUrl(fullPath);
+    return (
+      <Navigate
+        to={`/login?redirect=${encodeURIComponent(destination)}`}
+        replace
+        state={{ from: destination }}
+      />
+    );
   }
 
   return <Outlet />;

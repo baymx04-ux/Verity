@@ -7,6 +7,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -14,6 +15,7 @@ import { SqlPanel } from '../components/sql/SqlPanel';
 import { Alert } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Dialog } from '../components/ui/dialog';
 import { IconButton } from '../components/ui/icon-button';
 import { Sheet } from '../components/ui/sheet';
 import { Spinner } from '../components/ui/spinner';
@@ -202,7 +204,28 @@ export function ChatPage() {
     setHistoryOpen(false);
   };
 
-  const handleDeleteConversation = async (id: string) => {
+  const [conversationToDelete, setConversationToDelete] = useState<Conversation | null>(null);
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+
+  const handleRequestDeleteConversation = (id: string) => {
+    const target = conversations.find((c) => c.id === id);
+    setConversationToDelete(
+      target ?? {
+        id,
+        user_id: '',
+        title: 'Conversation',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    );
+  };
+
+  const handleConfirmDeleteConversation = async () => {
+    if (!conversationToDelete) {
+      return;
+    }
+    const id = conversationToDelete.id;
+    setIsDeletingConversation(true);
     try {
       await deleteConversation(id);
       const updated = await loadConversations();
@@ -215,8 +238,11 @@ export function ChatPage() {
           setMessages([]);
         }
       }
+      setConversationToDelete(null);
     } catch {
       // Deleting is best-effort; a stale rail entry is harmless.
+    } finally {
+      setIsDeletingConversation(false);
     }
   };
 
@@ -523,7 +549,7 @@ export function ChatPage() {
             activeConversationId={activeConversationId}
             onSelectConversation={handleSelectConversation}
             onNewConversation={handleNewConversation}
-            onDeleteConversation={(id) => void handleDeleteConversation(id)}
+            onDeleteConversation={handleRequestDeleteConversation}
           />
         </div>
 
@@ -541,6 +567,20 @@ export function ChatPage() {
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5">
+              {activeConversationId ? (
+                <Tooltip label="Delete chat">
+                  <IconButton
+                    aria-label="Delete chat"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleRequestDeleteConversation(activeConversationId)}
+                    className="text-ink-400 hover:bg-danger-bg hover:text-danger"
+                  >
+                    <Trash2 aria-hidden="true" className="size-4" />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
+
               <IconButton
                 aria-label="Open conversation history"
                 size="sm"
@@ -824,12 +864,58 @@ export function ChatPage() {
             activeConversationId={activeConversationId}
             onSelectConversation={handleSelectConversation}
             onNewConversation={handleNewConversation}
-            onDeleteConversation={(id) => void handleDeleteConversation(id)}
+            onDeleteConversation={handleRequestDeleteConversation}
             onCloseMobile={() => setHistoryOpen(false)}
             embedded
           />
         </div>
       </Sheet>
+
+      <Dialog
+        open={Boolean(conversationToDelete)}
+        onClose={() => {
+          if (!isDeletingConversation) {
+            setConversationToDelete(null);
+          }
+        }}
+        title="Delete chat"
+        description="This action cannot be undone."
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isDeletingConversation}
+              onClick={() => setConversationToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeletingConversation}
+              onClick={() => void handleConfirmDeleteConversation()}
+            >
+              {isDeletingConversation ? (
+                <span className="flex items-center gap-1.5">
+                  <Spinner label="Deleting" />
+                  <span>Deleting…</span>
+                </span>
+              ) : (
+                'Delete chat'
+              )}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-body-sm text-ink-600">
+          Are you sure you want to delete{' '}
+          <strong className="font-semibold text-ink-900">
+            {conversationToDelete?.title || 'this conversation'}
+          </strong>
+          ? All messages and citations in this chat will be permanently removed.
+        </p>
+      </Dialog>
     </div>
   );
 }

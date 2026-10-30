@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import express, { type ErrorRequestHandler, type Express } from 'express';
+import express, { type ErrorRequestHandler, type Express, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
@@ -22,6 +24,9 @@ import { DocumentService } from './services/documents';
 import { ChatService } from './services/chat';
 import type { InternalAiClient } from './ai-client/internal';
 import { optionalAuthenticate, resolveGroupIds } from './middleware/auth';
+import { clearRefreshCookie, readRefreshCookie } from './auth/cookies';
+import { validateSession } from './auth/session';
+import { sanitizeRedirectUrl } from './utils/redirect';
 import type { AuthRequest } from './types/auth';
 import type { IngestionJobData } from './queue/ingestion';
 
@@ -101,14 +106,100 @@ export function createApp({
 
   app.use('/api/auth', createAuthRouter({ config, logger, pool }));
   app.use('/api/admin', createAdminRouter({ pool, documentService, config, logger }));
-  app.use(
-    '/api/admin/schema-catalog',
-    createSchemaCatalogRouter({ ai, config, logger }),
-  );
+  app.use('/api/admin/schema-catalog', createSchemaCatalogRouter({ ai, config, logger }));
   app.use('/api/documents', createDocumentRouter({ documentService, config, logger }));
   app.use('/api/conversations', createConversationsRouter({ chatService, logger }));
   app.use('/api/chat', createChatRouter({ chatService, logger, config }));
   app.use('/api/messages', createMessagesRouter({ chatService, logger }));
+
+  app.all('/api/*', (_req, res) => {
+    res.status(404).json({
+      error: {
+        code: 'not_found',
+        message: 'Route not found',
+      },
+    });
+  });
+
+  const candidateDists = [
+    path.resolve(__dirname, '../../web/dist'),
+    path.resolve(process.cwd(), 'apps/web/dist'),
+    path.resolve(process.cwd(), '../web/dist'),
+  ];
+  const webDist = candidateDists.find((candidate) => fs.existsSync(candidate)) ?? null;
+
+  if (webDist) {
+    app.use(express.static(webDist, { index: false }));
+  }
+
+  function sendAppHtml(res: Response) {
+    if (webDist && fs.existsSync(path.join(webDist, 'index.html'))) {
+      return res.sendFile(path.join(webDist, 'index.html'));
+    }
+    return res
+      .type('html')
+      .send(
+        '<!DOCTYPE html><html><head><title>Verity</title></head><body><div id="root"></div></body></html>',
+      );
+  }
+
+  // Public route: /login
+  app.get('/login', async (req, res, next) => {
+    try {
+      const token = readRefreshCookie(req);
+      const session = await validateSession(pool, config, token);
+
+      if (session.valid && session.user) {
+        const rawTarget =
+          (req.query.redirect as string | undefined) ??
+          (req.query.returnUrl as string | undefined) ??
+          (req.query.from as string | undefined);
+        const destination = sanitizeRedirectUrl(rawTarget, '/chat');
+        return res.redirect(302, destination);
+      }
+
+      return sendAppHtml(res);
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  // Public route: /dev/components
+  app.get('/dev/components', (_req, res) => {
+    return sendAppHtml(res);
+  });
+
+  // All other GET routes: protected application pages
+  app.get('*', async (req, res, next) => {
+    try {
+      if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|map|json)$/)) {
+        return res.status(404).end();
+      }
+
+      const token = readRefreshCookie(req);
+      const session = await validateSession(pool, config, token);
+
+      if (!session.valid || !session.user) {
+        clearRefreshCookie(res, config);
+        const fullUrl = req.originalUrl || req.url;
+        const target = sanitizeRedirectUrl(fullUrl, '/chat');
+        return res.redirect(302, `/login?redirect=${encodeURIComponent(target)}`);
+      }
+
+      if (req.path === '/admin' && session.user.role !== 'admin') {
+        return res.status(403).json({
+          error: {
+            code: 'forbidden',
+            message: 'Insufficient permissions',
+          },
+        });
+      }
+
+      return sendAppHtml(res);
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   app.use((_req, res) => {
     res.status(404).json({
