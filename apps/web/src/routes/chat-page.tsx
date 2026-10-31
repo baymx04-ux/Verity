@@ -540,7 +540,7 @@ export function ChatPage() {
   }, [messages]);
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] w-full max-w-[1600px] flex-col px-3 py-3 sm:px-4 md:h-[calc(100dvh-4rem)] lg:px-6">
+    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] w-full max-w-[1600px] flex-col px-3 sm:px-4 md:h-[calc(100dvh-4rem)] lg:px-6 pt-2">
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         {/* Left desktop conversation rail */}
         <div className="hidden h-full lg:block">
@@ -554,8 +554,8 @@ export function ChatPage() {
         </div>
 
         {/* Center workspace + right evidence drawer */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:px-5">
+        <section className="flex min-h-0 flex-col rounded-card border border-line bg-surface shadow-card">
+          <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3 sm:py-4 pb-3 sm:pb-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate font-display text-display-md text-ink-900">Ask Verity</h1>
@@ -563,7 +563,7 @@ export function ChatPage() {
                   Grounded answers
                 </Badge>
               </div>
-              <p className="mt-0.5 truncate text-body-sm text-ink-500">{activeConversationTitle}</p>
+              <p className="mt-1 truncate text-body-sm text-ink-500">{activeConversationTitle}</p>
             </div>
 
             <div className="flex shrink-0 items-center gap-1.5">
@@ -638,7 +638,7 @@ export function ChatPage() {
                       <span className="mx-auto flex size-14 items-center justify-center rounded-[16px] border border-line bg-surface shadow-elevated">
                         <img src="/verity-logo.png" alt="" className="size-9 object-contain" />
                       </span>
-                      <h2 className="mt-5 font-display text-display-xl tracking-display text-ink-900">
+                      <h2 className="mt-8 font-display text-display-lg tracking-display text-ink-900">
                         Ask anything about your work
                       </h2>
                       <p className="mx-auto mt-2 max-w-lg text-body-md leading-relaxed text-ink-500">
