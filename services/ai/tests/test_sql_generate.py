@@ -7,6 +7,7 @@ from app.sql.generate import _parse_response, generate_sql
 
 class FakeLLM:
     name = "fake"
+    model = "fake-model"
 
     def __init__(self, response: str) -> None:
         self.response = response

@@ -12,13 +12,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import asdict
 from typing import Any, Protocol
 
 from redis.asyncio import Redis
 
 from app.core.config import Settings
-from app.rag.types import Citation, RetrievedChunk, RetrievalResult
+from app.rag.types import Citation, RetrievalResult, RetrievedChunk
 
 logger = logging.getLogger(__name__)
 

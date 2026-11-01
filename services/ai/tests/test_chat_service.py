@@ -13,6 +13,7 @@ from app.rag.types import AccessContext, Citation, RetrievalResult, RetrievedChu
 
 class FakeLLMClient(LLMClient):
     name = "fake"
+    model = "fake-model"
 
     def __init__(self, deltas: list[str]) -> None:
         self.deltas = deltas

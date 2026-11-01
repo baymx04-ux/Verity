@@ -1,24 +1,27 @@
 # Verity
 
-Verity is a single-tenant, role-based enterprise knowledge base: RAG over internal
-documents plus a guarded text-to-SQL layer over live business data. Every answer
-is designed to show its evidence — cited document chunks or the SQL that ran.
+Verity is a single-tenant, role-based enterprise knowledge base: retrieval-augmented
+answers over internal documents plus a guarded text-to-SQL layer over live business
+data. Every answer shows its evidence — cited document chunks or the SQL that ran —
+and every request is traced, so quality is measured rather than assumed.
 
-**Current state:** Phases 0–5 are implemented. Auth, RBAC, the design system, the
-app shell, document upload, MinIO storage, the BullMQ ingestion worker, AI
-parsing/chunking/embedding, the documents library, hybrid retrieval, reranking,
-and grounded SSE chat are in place and covered by the Node and Python suites.
-Docker Compose startup is config-validated but a full cold-start run is still
-deferred to Phase 7, and the time-to-first-token target has not yet been measured
-against a live model. Text-to-SQL (Phase 4) is implemented with read-only
-`business_ro` access, schema catalog, SQL validation/execution, and a SQL
-results panel. Phase 5 adds automatic intent routing (documents, SQL, hybrid, or
-out-of-scope), concurrent document + SQL hybrid answers with partial-failure
-degradation, follow-up rewriting on both paths, and route badges in the chat UI.
-The routing dataset and harness are in place, but a complete ≥90% measurement is
-still pending because the model quota was exhausted mid-run; see
-[`evals/datasets/README.md`](./evals/datasets/README.md). See
-[`plan.md`](./plan.md) for behavior and [`design.md`](./design.md) for the
+Phases 0–7 of the [implementation plan](./docs/implementation-plan.md) are
+implemented: auth and RBAC, the design system and app shell, document ingestion,
+hybrid retrieval with reranking, grounded streaming chat with citations and refusal,
+read-only text-to-SQL, automatic intent routing with hybrid answers, Langfuse
+tracing, an admin metrics dashboard, and an offline-validated evaluation harness.
+
+Two things have **not** been measured yet, and no numbers are asserted for them:
+
+- **Full evaluation run.** Datasets are written and validated
+  (`make eval-validate` passes), but live scoring needs an LLM API key and the key
+  quota was exhausted mid-run at the time of writing. See
+  [Evaluation](#evaluation).
+- **Live cold-start.** Docker Compose startup is config-validated and every layer
+  has unit/integration tests, but a full from-clean-volume boot with real model
+  keys has not been verified end to end.
+
+See [`plan.md`](./plan.md) for behavior and [`design.md`](./design.md) for the
 visual system.
 
 ## Quick start
@@ -35,9 +38,10 @@ containers report healthy:
 
 | URL                                  | What                                                    |
 | ------------------------------------ | ------------------------------------------------------- |
-| http://localhost:5173                | Web app (login → chat shell)                            |
+| http://localhost:5173                | Web app (login → chat/documents/admin)                  |
 | http://localhost:5173/dev/components | Dev-only component gallery                              |
 | http://localhost:4000/api/health     | Gateway health JSON                                     |
+| http://localhost:3000                | Langfuse UI (optional tracing; set Langfuse keys first) |
 | http://localhost:9001                | MinIO console (`MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`) |
 | localhost:5432                       | Postgres 16 + pgvector                                  |
 | localhost:6379                       | Redis 7                                                 |
@@ -73,16 +77,14 @@ progress. See [`docs/ingestion.md`](./docs/ingestion.md) for the pipeline.
 
 Open **Ask Verity** after signing in. Suggested prompts include the employee
 annual-leave policy, damaged-goods returns, delivery SLAs, and remote-work
-equipment expenses. Answers stream from the AI service through the gateway, cite
-the accessible passages they use, and show the retrieved sources in the evidence
-drawer.
-
-The default answer model is `gemini-2.5-flash` (`LLM_MODEL`). Retrieval and the
-confidence gate still work without generation when embeddings or the model are
-unavailable, but live answers require a valid `GOOGLE_API_KEY`. No latency or
-quality numbers are claimed until the demo corpus has been indexed and measured
-end to end. See [`docs/retrieval.md`](./docs/retrieval.md) for the pipeline and
-[`docs/api.md`](./docs/api.md#chat-and-sse) for the stream contract.
+equipment expenses. The server routes each question automatically (documents,
+SQL, hybrid, or out-of-scope), answers stream over SSE through the gateway,
+citing the accessible passages they use, with the retrieved sources in the
+evidence drawer and a route badge on each answer. The default answer model is
+`gemini-2.5-flash` (`LLM_MODEL`); live answers require a valid `GOOGLE_API_KEY`.
+When evidence is too weak, Verity says it cannot answer — even while retrieval
+stays available. See [`docs/retrieval.md`](./docs/retrieval.md) for the pipeline
+and [`docs/api.md`](./docs/api.md#chat-and-sse) for the stream contract.
 
 The values in `.env.example` are **development-only placeholders**. Change every
 `change-me` value before exposing the stack beyond your machine. `.env` is
@@ -90,6 +92,88 @@ gitignored; never commit it.
 
 Stop with `docker compose down`. `make clean` also deletes the Postgres, Redis,
 and MinIO volumes, including uploaded documents.
+
+## Observability and metrics
+
+- **Tracing:** the AI service exports a trace per chat request:
+  retrieval stage spans (query rewrite, both search arms, fusion, rerank),
+  routing decisions, token use, and answer status. The exporter is self-hosted
+  [Langfuse v3](./infra/docker-compose.yml) (UI on port 3000) or a no-op when no
+  keys are configured — tracing is fail-open and chat never depends on it. See
+  [`docs/architecture.md`](./docs/architecture.md#observability).
+- **Metrics:** the gateway runs SQL over its own database and message metadata to
+  expose `/api/admin/metrics`: requests with p50/p95 latency, trace-linked share,
+  route mix, thumbs feedback, "I don't know" rate, SQL validation failure rate,
+  and the top failing questions — computed over a selectable window. Open the
+  **Admin** page as an admin user to see the dashboard. Estimated spend appears
+  only when token rates (`LLM_INPUT/OUTPUT_COST_PER_MILLION`) are configured;
+  otherwise the dashboard says "Not priced" rather than inventing a cost.
+- **Feedback:** thumbs up/down with an optional comment, one per user per
+  message, with optimistic UI that rolls back on error. Counts and
+  thumbs-down rate surface in the metrics dashboard.
+
+## Evaluation
+
+The Phase 6 harness lives in [`evals/`](./evals):
+
+| Requirement       | What ships                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| RAG-style scores  | Faithfulness, answer relevancy, context precision/recall (single-judge LLM)          |
+| SQL quality       | Generated SQL executed with `business_ro` compared against `gold_sql` results        |
+| Routing           | Reuses the live classifier over `evals/datasets/routing.jsonl`                       |
+| Safety            | Injection/out-of-scope cases in `evals/datasets/safety.jsonl`                        |
+| Latency & cost    | Measured per run; cost only when token pricing is configured                         |
+| Prepared datasets | `docs_qa.jsonl` (63), `sql_qa.jsonl` (42), `routing.jsonl` (50), `safety.jsonl` (20) |
+
+```bash
+make eval           # full suite against the running stack (needs a model key + services)
+make eval-validate  # dataset shape validation, offline — currently passing
+make routing-eval   # router accuracy over the routing dataset (needs a model key)
+```
+
+A real model key (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
+`COHERE_API_KEY`) is required for live scoring. Reports are written to
+`evals/reports/eval.md` and `evals/reports/eval.json`, with a comparison section
+against the previous run so regressions are visible.
+
+### Result status (honest bookkeeping)
+
+| Metric                       | Status                                             |
+| ---------------------------- | -------------------------------------------------- |
+| RAGAS-style answer quality   | Harness ready; **not yet measured** (no key quota) |
+| Citation correctness         | Harness ready; **not yet measured**                |
+| SQL execution accuracy       | Harness ready; **not yet measured**                |
+| Routing accuracy             | Harness ready; **not yet measured**¹               |
+| Refusal correctness          | Harness ready; **not yet measured**                |
+| Latency p50/p95 & cost/query | Harness ready; **not yet measured**                |
+
+¹ The most recent routing run measured nothing: the classifier was down and all
+50 cases silently fell back to hybrid (`evals/reports/routing.md`). Any routing
+number from that run is invalid.
+
+### Before / after: hybrid answers + reranking
+
+This table will show the measured effect of concurrent document + SQL retrieval
+(hybrid) plus reranking, compared with a documents-only baseline without
+reranking. Both columns are pending the first complete `make eval` run; the
+baseline numbers must be produced by the same harness, so no figures are
+asserted here.
+
+| Metric                       | Before (documents only, no rerank) | After (hybrid + rerank) | Δ   |
+| ---------------------------- | ---------------------------------- | ----------------------- | --- |
+| RAGAS faithfulness           | pending first `make eval` run      | pending first run       | —   |
+| RAGAS answer relevancy       | pending first `make eval` run      | pending first run       | —   |
+| RAGAS context precision      | pending first `make eval` run      | pending first run       | —   |
+| RAGAS context recall         | pending first `make eval` run      | pending first run       | —   |
+| Citation correctness         | pending first `make eval` run      | pending first run       | —   |
+| SQL execution accuracy       | pending first `make eval` run      | pending first run       | —   |
+| Routing accuracy             | pending first `make eval` run      | pending first run       | —   |
+| Refusal correctness          | pending first `make eval` run      | pending first run       | —   |
+| Latency p50 / p95            | pending first `make eval` run      | pending first run       | —   |
+| Average estimated cost/query | pending first `make eval` run      | pending first run       | —   |
+
+Run `make eval` twice — once with `RERANKER=none` for the baseline — and fill the
+rows from `evals/reports/eval.md`. No figures are asserted until then.
 
 ## Deploy on Render
 
@@ -107,6 +191,7 @@ this GitHub repo.
 ### Steps
 
 1. **Push to GitHub**
+
    ```bash
    git add .
    git commit -m "Add Render deployment config"
@@ -132,101 +217,81 @@ this GitHub repo.
 
 ### Service URLs (after deployment)
 
-| Service | URL |
-|---------|-----|
-| Web app | `https://verity-web.onrender.com` |
+| Service     | URL                               |
+| ----------- | --------------------------------- |
+| Web app     | `https://verity-web.onrender.com` |
 | API gateway | `https://verity-api.onrender.com` |
-| AI service | `https://verity-ai.onrender.com` |
+| AI service  | `https://verity-ai.onrender.com`  |
 
 The `render.yaml` blueprint wires service URLs between containers automatically
 (`AI_SERVICE_URL`, `POSTGRES_HOST`, `REDIS_URL`, `WEB_ORIGIN`), so no manual
 connection-string copying is required. See [`DEPLOY.md`](./DEPLOY.md) for the
 full deployment reference.
 
+## What ships today
 
-## What exists now
-
-- Monorepo: `apps/web` (React 18, TypeScript strict, Vite, Tailwind, React
+- **Monorepo:** `apps/web` (React 18, TypeScript strict, Vite, Tailwind, React
   Router, Lucide), `apps/api` (Express, TypeScript strict, Zod, pino, helmet,
   CORS, rate limiting, bcrypt, JWT, BullMQ, S3/MinIO), `services/ai` (FastAPI,
   Pydantic v2, pypdf/docx/BeautifulSoup parsing, structured logs).
-- Phase 1 design system: token-based palette/typography/radii, accessible
+- **Design system (Phase 1):** token-based palette/typography/radii, accessible
   primitives (buttons, inputs, cards, badges, tables, dialog, sheet, dropdown,
   tabs, tooltip, alerts, empty states, skeletons), responsive app shell, mobile
   navigation, and a dev-only component gallery.
-- Auth: login, short-lived access JWT, rotating refresh cookie with reuse
-  detection, logout, `/me`, RBAC middleware, login/refresh rate limits, and
-  audit events. Admin-only user list, role patch, and group list APIs exist; the
-  management UI lands with a later admin phase.
-- Web auth: in-memory access token, silent refresh on load, one-shot retry after
-  `401`, protected router, role guards, login screen, user menu, and honest
-  environment badge.
-- Demo seed: idempotent admin/analyst/viewer users, `finance`, `people`, and
-  `engineering` groups, and a 21-document corpus including two conflicting
-  revenue reports, a prompt-injection fixture, and restricted documents.
-- Document API: multipart upload with extension/MIME/size validation and an
-  upload rate limit, MinIO object storage, list/detail/edit/retry/delete,
-  five-minute signed downloads, and SQL-side access filtering for
-  public/internal/restricted documents and groups.
-- Ingestion: BullMQ queue plus a dedicated `worker` process, the
-  `queued → processing → ready/failed` lifecycle, three attempts with exponential
-  backoff, per-attempt audit rows, chunk/page counts, and actionable failure codes.
-- AI ingestion: signed `/ingest` and `DELETE /documents/{id}`, PDF/DOCX/TXT/MD/HTML
-  parsing, structure-aware chunking with real overlap, contextual embedding text,
-  batched `gemini-embedding-001` calls with retries, a Redis content-hash cache,
-  and idempotent chunk replacement.
-- Documents UI: drag/drop multi-upload with per-file progress, search/filter/
-  pagination, four-second status polling, status and access badges, detail drawer,
-  signed download, admin access/group editing, retry, and delete confirmation.
-- Retrieval: follow-up query rewriting, role/group access predicates applied
-  inside both SQL arms, pgvector cosine search plus Postgres full-text search,
-  Reciprocal Rank Fusion, a `RERANK_CANDIDATES` cap before configurable reranking
-  (`none`, `local`, or Cohere), retrieval stage spans, and a score-based
-  confidence gate. See [`docs/retrieval.md`](./docs/retrieval.md).
-- Chat: persistent conversations owned per user, latest-20-turn history, SSE
-  streaming with status/route/token/sources events, inline `[n]` citation
-  validation (dropped markers counted and logged), honest refusal for weak
-  evidence, stop, retry, regenerate, copy, thumbs up/down feedback, and a source
-  drawer with real page/section/score metadata and a fresh signed document link.
-  Every `done` event includes AI-service `time_to_first_token_ms`, which is also
-  persisted in assistant metadata.
-- Chat failure handling: the gateway persists partial answers on stop or stream
-  failure with `answer_status` (`aborted` / `error`), suppresses the upstream
-  `done` event so the client never renders a duplicate, and sends a 15-second
-  heartbeat so idle generations survive intermediaries.
-- Postgres 16 + pgvector with `app`, `business`, and `business_ro` schemas.
-- Two least-privilege login roles, verified by `make verify-roles`:
-  - `verity_app`: CONNECT + DML on `app`; no DDL, no `business_ro`.
-  - `verity_sql_ro`: CONNECT + SELECT on `business_ro` only; read-only
-    transactions, 5 s statement timeout, no `pg_sleep`/file functions.
-- A separate `postgres` superuser for init and migrations, because the official
-  image otherwise makes the app role a superuser. Application traffic never uses it.
-- Versioned SQL migrations, a one-shot `migrate` service, and a private MinIO
-  bucket bootstrapped by `minio-init`.
-- nginx serving the built web app and proxying `/api` with SSE buffering disabled.
-- Unit and integration tests for auth flows (login, rotation/reuse, logout, RBAC,
-  validation), the app shell/router, documents UI (upload, filters, access edits,
-  delete), gateway error/health contract, upload validation, document access
-  filtering, deletion order/cascade, ingestion status and failure classification,
-  AI health/config/parsing/chunking/embedding/signed requests, RRF fusion,
-  retrieval access predicates and the confidence gate, citation validation,
-  refusal behaviour, SSE parsing on both Node and web, chat abort/regenerate
-  persistence, and RTL chat citations/feedback.
-- ESLint, Prettier, Ruff, mypy strict, Vitest, pytest, and a GitHub Actions CI
-  skeleton with a dependency audit.
+- **Auth:** login, short-lived access JWT, rotating refresh cookie with reuse
+  detection, logout, `/me`, RBAC middleware, rate limits on login/refresh, and
+  audit events. Admin-only user list, role patch, and group list APIs; admin UI
+  covers users/groups, the schema catalog editor, and the metrics dashboard.
+- **Documents (Phase 2):** multipart upload with validation and rate limiting,
+  MinIO storage, list/detail/edit/retry/delete, five-minute signed downloads,
+  BullMQ worker lifecycle (`queued → processing → ready/failed`, three attempts
+  with exponential backoff), structure-aware chunking, contextual embedding
+  text, batched embeddings with retries, a content-hash cache, and idempotent
+  chunk replacement.
+- **Retrieval (Phase 3):** follow-up query rewriting, role/group access
+  predicates inside both search arms, pgvector cosine + Postgres full-text
+  search with Reciprocal Rank Fusion, a configurable reranker (`none`, `local`,
+  or Cohere), a score-based confidence gate, and inline citation chips. Answers
+  refuse honestly when evidence is weak.
+- **Chat (Phase 3–5):** persistent per-user conversations, SSE streaming with
+  status/route/token/source events, stop/retry/regenerate, partial-answer
+  persistence on abort or stream failure, a 15-second heartbeat, automatic
+  routing with out-of-scope steering, concurrent hybrid answers with
+  partial-failure degradation, and route badges.
+- **Text-to-SQL (Phase 4):** `business_ro` schema and role, versioned schema
+  catalog, validation pipeline (single SELECT, allowlisted views, enforced
+  LIMIT, complexity checks), read-only execution with a 5 s statement timeout,
+  and a SQL results panel in chat.
+- **Observability (Phase 6):** Langfuse tracing (fail-open), trace-persisted
+  message metadata (route confidence, cost `null` when unpriced, TTFT), the
+  admin metrics API + dashboard, and thumbs feedback with rollback UX.
+- **Data & security:** Postgres 16 + pgvector with `app`, `business`, and
+  `business_ro` schemas; least-privilege roles verified by `make verify-roles`;
+  prompt-injection defenses (delimited untrusted context, injection fixtures);
+  versioned SQL migrations; a private MinIO bucket; nginx proxying `/api` with
+  SSE buffering disabled.
+- **Phase 7 hardening:** Redis caches for embeddings and repeated standalone
+  questions (access-context-aware keys), an offline banner and polished
+  empty/loading/error states, a Playwright E2E suite (`make e2e`), a demo
+  walkthrough ([`docs/demo-script.md`](./docs/demo-script.md)), and a security
+  overview ([`docs/security.md`](./docs/security.md)).
+- **Quality gates:** ESLint, Prettier, Ruff, mypy strict, Vitest, pytest, a CI
+  skeleton with a dependency audit, plus the opt-in Playwright E2E suite.
 
 ## Repository layout
 
 ```text
 apps/web                 React 18 + Vite + Tailwind (served by nginx in Compose)
-apps/api                 Express gateway
-services/ai              FastAPI retrieval/SQL service (internal only)
+apps/api                 Express gateway (auth, documents, chat SSE, admin metrics)
+services/ai              FastAPI retrieval/routing/SQL service (internal only)
+services/ai/app/tracing  Trace abstractions + Langfuse exporter (fail-open)
 infra/postgres           init scripts, migrations, role verification
 infra/nginx              static build + /api proxy
-infra/docker-compose.yml services, health checks, volumes
-evals                    RAGAS / routing / SQL evaluation harness (Phase 6)
+infra/docker-compose.yml services, health checks, volumes (incl. Langfuse stack)
+evals                    datasets, offline validator, and the Phase 6 eval harness
 docs                     implementation plan, architecture, API contract
 compose.yaml             root include so `docker compose up` works from the repo root
+render.yaml              Render.com blueprint (see DEPLOY.md)
 ```
 
 ## Database roles
@@ -238,8 +303,7 @@ compose.yaml             root include so `docker compose up` works from the repo
 | `verity_sql_ro` | text-to-SQL execution | `USAGE` on `business_ro`, SELECT only, read-only, 5 s timeout               |
 
 The SQL executor must never reuse the app connection or the migration superuser.
-`business_ro` views are the allowlist; the future sqlglot validator adds the
-application-level checks (single SELECT, view allowlist, enforced LIMIT).
+`business_ro` views are the allowlist on top of the SQL validator's checks.
 
 Verify the boundaries after the stack is running:
 
@@ -278,20 +342,24 @@ both modes.
 ### Commands
 
 ```bash
-make up              # build + start the stack
-make down            # stop, keep volumes
-make clean           # stop + delete volumes
-make logs            # follow logs
-make migrate         # apply pending SQL migrations
-make seed            # seed demo users, groups, and documents
-make verify-roles    # prove role privileges and boundaries
-make test            # Vitest (web, gateway) + pytest (AI)
+make up               # build + start the stack
+make down             # stop, keep volumes
+make clean            # stop + delete volumes
+make logs             # follow logs
+make migrate          # apply pending SQL migrations
+make seed             # seed demo users, groups, and documents
+make verify-roles     # prove role privileges and boundaries
+make test             # Vitest (web, gateway) + pytest (AI)
 make test-integration # opt-in PostgreSQL access-filter test (VERITY_TEST_ADMIN_URL)
-make lint            # ESLint + Ruff
-make typecheck       # tsc --noEmit + mypy strict
-make check           # lint + typecheck + test
-make format          # Prettier + Ruff format
-make audit           # npm audit + pip-audit
+make lint             # ESLint + Ruff
+make typecheck        # tsc --noEmit + mypy strict
+make check            # lint + typecheck + test
+make format           # Prettier + Ruff format
+make audit            # npm audit + pip-audit
+make eval             # full eval suite against the running stack
+make eval-validate    # validate eval datasets offline (no model calls)
+make routing-eval     # router accuracy over evals/datasets/routing.jsonl
+make e2e              # Playwright end-to-end suite
 ```
 
 ### Testing notes
@@ -302,64 +370,23 @@ make audit           # npm audit + pip-audit
   `VERITY_TEST_ADMIN_URL` at a PostgreSQL admin connection, for example
   `VERITY_TEST_ADMIN_URL=postgresql:///postgres make test-integration`. It uses
   keyword retrieval only, so pgvector is not required.
+- LLM calls are mocked in unit tests; real-model runs happen only in `make eval`
+  and `make routing-eval`.
 - CI runs web/API formatting, lint, typecheck, tests, build; AI lint, format,
   typecheck, tests; and `docker compose build`. The audit job is advisory.
-- There is no RAGAS evaluation yet. RAGAS scores land in Phase 6; nothing is
-  fabricated. Phase 5 ships a labeled routing dataset and `make routing-eval`.
-  A complete routing accuracy run is deferred until model quota is available.
 
 ## Roadmap
 
-| Phase | Scope                                                   | Status                                                 |
-| ----- | ------------------------------------------------------- | ------------------------------------------------------ |
-| 0     | Foundation: monorepo, Compose, roles, health, tests, CI | Implemented; Docker cold start deferred                |
-| 1     | Auth, RBAC, design system, app shell, demo users        | Implemented; unit/integration tests green              |
-| 2     | Ingestion, chunking, embeddings, document admin         | Implemented; unit/integration tests green              |
-| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal  | Implemented; DB leakage test added, live TTFT deferred |
-| 4     | Business data, read-only views, SQL validation, SQL UI  | Implemented                                            |
-| 5     | Router, hybrid answers, conversation memory             | Implemented; routing accuracy measurement incomplete   |
-| 6     | Langfuse, metrics, eval harness, feedback               | Implemented                                            |
-| 7     | Hardening, rate limits, safety, accessibility, E2E, docs | Implemented                                            |
-
-## Evaluation results (Phase 6)
-
-The eval harness (`evals/run_evals.py`) measures RAGAS-style quality metrics, SQL
-execution accuracy, routing accuracy, refusal correctness, latency, and estimated
-cost against the seeded corpus. Reports are written to `evals/reports/eval.md` and
-`evals/reports/eval.json`, with a comparison to the previous run.
-
-### Before / after: hybrid answers + reranking
-
-This table shows the measured effect of enabling concurrent document + SQL retrieval
-(hybrid) and a reranker over the keyword+vector candidate set, compared with a
-documents-only baseline without reranking.
-
-| Metric | Before (documents only, no rerank) | After (hybrid + rerank) | Change |
-| ------ | ---------------------------------- | ----------------------- | ------ |
-| RAGAS faithfulness | — | measured per run | — |
-| RAGAS answer relevancy | — | measured per run | — |
-| RAGAS context precision | — | measured per run | — |
-| RAGAS context recall | — | measured per run | — |
-| Citation correctness | — | measured per run | — |
-| SQL execution accuracy | — | measured per run | — |
-| Routing accuracy | — | measured per run | — |
-| Refusal correctness | — | measured per run | — |
-| Latency p95 | — | measured per run | — |
-| Average cost / query | — | measured per run | — |
-
-Run the evals yourself:
-
-```bash
-make eval          # full eval suite against the running stack
-make routing-eval  # router accuracy on evals/datasets/routing.jsonl
-make eval-validate # validate dataset shapes offline
-```
-
-Each run overwrites `evals/reports/eval.md` and `evals/reports/eval.json` and
-appends a "Comparison with previous run" section so you can spot regressions.
-Real model keys (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or
-`COHERE_API_KEY`) are required for live measurement; without them the harness
-still validates dataset shapes but cannot score generated answers.
+| Phase | Scope                                                              | Status                                                                                       |
+| ----- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| 0     | Foundation: monorepo, Compose, roles, health, tests, CI            | Implemented; full cold-start boot not yet verified                                           |
+| 1     | Auth, RBAC, design system, app shell, demo users                   | Implemented; unit/integration tests green                                                    |
+| 2     | Ingestion, chunking, embeddings, document admin                    | Implemented; unit/integration tests green                                                    |
+| 3     | Hybrid retrieval, rerank, citations, SSE chat, refusal             | Implemented; TTFT not measured against a live model                                          |
+| 4     | Business data, read-only views, SQL validation, SQL UI             | Implemented                                                                                  |
+| 5     | Router, hybrid answers, conversation memory                        | Implemented; routing accuracy not yet measured (see Evaluation)                              |
+| 6     | Langfuse tracing, admin metrics, eval harness, feedback            | Implemented; eval datasets validated, live scoring pending key quota                         |
+| 7     | Hardening: caches, rate limits, safety, a11y, Playwright E2E, docs | Implemented; E2E needs a live stack (`make e2e`), not yet run in CI; Lighthouse not measured |
 
 ## Design and delivery decisions
 
@@ -370,19 +397,26 @@ still validates dataset shapes but cannot score generated answers.
   "attestation", fabricated scan counts, and manual route selector are **not**
   implemented. Verity routes automatically on the server and keeps explicit
   Documents/Data modes as an escape hatch.
-- Langfuse tracing (fail-open) is implemented in Phase 6; see [`docs/architecture.md`](./docs/architecture.md).
+- RAGAS-style metrics are single-judge LLM scores computed by the local harness,
+  not the `ragas` Python package — same metric names, transparent prompts.
+- Cost is never fabricated: when token pricing is not configured the dashboard
+  reports "Not priced" and cost metadata stays `null`.
 - Images are pinned where practical. The MinIO image follows `latest` (currently
-  the `coollabsio/minio` mirror because the upstream image was unavailable); it
-  will be pinned during the Phase 7 hardening pass.
+  the `coollabsio/minio` mirror because the upstream image was unavailable).
+- Langfuse tracing is fail-open by design: chat works with tracing unavailable,
+  and the UI degrades gracefully. See
+  [`docs/architecture.md#observability`](./docs/architecture.md#observability).
 
 ## Documentation
 
 - [`plan.md`](./plan.md) — product and engineering source of truth
 - [`design.md`](./design.md) — visual system and UX
 - [`docs/implementation-plan.md`](./docs/implementation-plan.md) — phases, risks, conflict resolutions, open questions
-- [`docs/architecture.md`](./docs/architecture.md) — services, schemas, roles, startup order
+- [`docs/architecture.md`](./docs/architecture.md) — services, schemas, roles, startup order, observability
+- [`docs/security.md`](./docs/security.md) — authentication, RBAC, rate limiting, safety, database roles
 - [`docs/ingestion.md`](./docs/ingestion.md) — document pipeline, storage layout, chunking, statuses, demo corpus
 - [`docs/retrieval.md`](./docs/retrieval.md) — hybrid retrieval, reranking, confidence gate, chat streaming
-- [`docs/api.md`](./docs/api.md) — public error/health contract, chat SSE, and the internal AI contract
-- [`docs/security.md`](./docs/security.md) — authentication, RBAC, rate limiting, safety, database roles
+- [`docs/api.md`](./docs/api.md) — public error/health contract, chat SSE, admin metrics, and the internal AI contract
 - [`docs/demo-script.md`](./docs/demo-script.md) — step-by-step end-to-end demo walkthrough
+- [`DEPLOY.md`](./DEPLOY.md) — Render.com deployment reference
+- [`evals/datasets/README.md`](./evals/datasets/README.md) — dataset format and scoring notes

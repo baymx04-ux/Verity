@@ -21,6 +21,7 @@ from app.sql.validate import ValidationResult
 
 class FakeLLM:
     name = "fake-hybrid"
+    model = "fake-hybrid-model"
 
     def __init__(self, text: str) -> None:
         self.text = text
@@ -35,7 +36,9 @@ class FakeRetrieval:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
 
-    async def retrieve(self, question: str, access: AccessContext, **kwargs: Any) -> RetrievalResult:
+    async def retrieve(
+        self, question: str, access: AccessContext, **kwargs: Any
+    ) -> RetrievalResult:
         if self.fail:
             raise RuntimeError("vector store unavailable")
         chunk = RetrievedChunk(

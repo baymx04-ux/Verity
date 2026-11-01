@@ -393,7 +393,9 @@ class HybridChatService:
         standalone: bool = True,
     ) -> RetrievalResult:
         with trace.span("hybrid_retrieval"):
-            return await self._retrieval.retrieve(question, access, trace=trace, standalone=standalone)
+            return await self._retrieval.retrieve(
+                question, access, trace=trace, standalone=standalone
+            )
 
     def _done(
         self,

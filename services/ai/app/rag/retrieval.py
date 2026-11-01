@@ -14,7 +14,7 @@ from psycopg.rows import dict_row
 from app.core.config import Settings
 from app.core.tracing import Trace
 from app.ingestion.embeddings import GoogleEmbeddingClient
-from app.rag.question_cache import QuestionCache, build_question_cache
+from app.rag.question_cache import QuestionCache
 from app.rag.rerank import Reranker, build_citations
 from app.rag.types import AccessContext, RetrievalResult, RetrievedChunk
 

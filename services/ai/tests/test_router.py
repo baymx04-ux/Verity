@@ -17,6 +17,7 @@ from app.router.service import OUT_OF_SCOPE_ANSWER, RoutedChatService
 
 class FakeLLM:
     name = "fake-router"
+    model = "fake-router-model"
 
     def __init__(self, text: str) -> None:
         self.text = text

@@ -82,7 +82,7 @@ export function MessageItem({
     setFeedbackRating(rating);
     try {
       await onFeedback(message.id, rating, undefined);
-    } catch (error) {
+    } catch {
       setFeedbackRating(previousRating);
     }
   };

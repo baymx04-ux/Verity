@@ -1,15 +1,15 @@
 import base64
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import pytest
-
 from app.core.config import Settings
 from app.tracing import NoopTraceExporter, Trace, build_trace_exporter
 from app.tracing.langfuse import LangfuseTraceExporter
 
 
-def settings(**overrides: object) -> Settings:
+def settings(**overrides: Any) -> Settings:
     return Settings(
         _env_file=None,
         environment="test",
