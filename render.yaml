@@ -6,9 +6,6 @@ services:
     env: docker
     region: oregon
     plan: free
-    disk:
-      name: verity-postgres-data
-      mountPath: /var/lib/postgresql/data
     dockerfilePath: infra/postgres/Dockerfile
     envVars:
       - key: POSTGRES_DB
