@@ -14,11 +14,9 @@
 
 services:
 
-  # ------------------------------------------------------------------
   # PostgreSQL 16 + pgvector
   # Deployed as a web service because Render's managed PostgreSQL does
   # not include the pgvector extension required by the AI service.
-  # ------------------------------------------------------------------
   - name: verity-postgres
     type: web
     env: docker
