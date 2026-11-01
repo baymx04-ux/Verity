@@ -32,13 +32,11 @@ services:
     region: oregon
     plan: starter
     maxmemoryPolicy: allkeys-lru
+    # source: service allows all internal services (verity-ai, verity-api) in the
+    # same region to connect. Render's blueprint spec does not support
+    # per-service allow-list entries.
     ipAllowList:
       - source: service
-        sourceService: verity-ai
-        description: Allow AI service to connect to Redis
-      - source: service
-        sourceService: verity-api
-        description: Allow API gateway to connect to Redis
 
   # AI service (FastAPI — RAG, embeddings, SQL generation)
   - name: verity-ai
