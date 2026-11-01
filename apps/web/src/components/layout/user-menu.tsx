@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../features/auth/use-auth';
 import { Avatar } from '../ui/avatar';
-import { Badge } from '../ui/badge';
 import { DropdownMenu, DropdownMenuItem, DropdownMenuSeparator } from '../ui/dropdown-menu';
+import { Tag } from '../ui/tag';
 
 function displayName(firstName?: string | null, lastName?: string | null, email?: string): string {
   const full = [firstName, lastName].filter(Boolean).join(' ').trim();
@@ -50,7 +50,7 @@ export function UserMenu() {
         <p className="truncate text-label-md text-ink-900">{name}</p>
         <p className="truncate text-body-sm text-ink-500">{user.email}</p>
         <div className="mt-2">
-          <Badge variant="neutral">{user.role}</Badge>
+          <Tag variant="neutral">{user.role}</Tag>
         </div>
       </div>
       <DropdownMenuSeparator />

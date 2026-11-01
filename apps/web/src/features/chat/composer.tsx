@@ -46,7 +46,7 @@ export function Composer({
   return (
     <div className="border-t border-line bg-surface/85 p-3 backdrop-blur-sm sm:p-4">
       <div className="mx-auto max-w-4xl">
-        <div className="rounded-2xl border border-line bg-surface shadow-elevated transition-fluid focus-within:border-action-accent focus-within:ring-2 focus-within:ring-action-accent/15">
+          <div className="rounded-[10px] border border-line bg-surface shadow-elevated transition-fluid focus-within:border-action-accent focus-within:ring-2 focus-within:ring-action-accent/15">
           <label htmlFor="composer-input" className="sr-only">
             Ask a question
           </label>
@@ -68,7 +68,7 @@ export function Composer({
             className="min-h-[60px] w-full resize-none border-0 bg-transparent px-4 py-3.5 text-body-md text-ink-900 shadow-none placeholder:text-ink-400 hover:border-0 focus-visible:border-0 focus-visible:ring-0"
           />
 
-          <div className="flex items-center justify-between gap-2 rounded-b-2xl border-t border-line bg-canvas-subtle/60 px-2.5 py-2">
+          <div className="flex items-center justify-between gap-2 rounded-b-[10px] border-t border-line bg-canvas-subtle/60 px-2.5 py-2">
             <div
               className="inline-flex rounded-control border border-line bg-surface p-0.5 shadow-xs"
               role="group"
@@ -116,7 +116,7 @@ export function Composer({
                   size="sm"
                   onClick={onSubmit}
                   disabled={disabled || !question.trim()}
-                  className="h-9 gap-1.5 rounded-full px-3.5"
+                  className="h-9 gap-1.5 rounded-[6px] px-3.5"
                 >
                   <span>Ask</span>
                   <ArrowUp className="size-3.5" aria-hidden="true" />

@@ -11,7 +11,6 @@ import { type FormEvent, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import { Alert } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -110,16 +109,10 @@ export function LoginPage() {
             </span>
           </span>
         </div>
-        <Badge variant="verified" dot className="hidden sm:inline-flex">
-          Grounded knowledge workspace
-        </Badge>
       </header>
 
       <main className="relative z-10 mx-auto grid w-full max-w-[1440px] flex-1 items-center gap-12 px-5 py-8 sm:px-8 lg:grid-cols-[1.05fr_0.95fr] lg:px-12 lg:py-12">
         <section className="hidden max-w-xl lg:block">
-          <Badge variant="info" dot>
-            Verified answers · Source-level citations
-          </Badge>
           <h2 className="mt-5 font-display text-[3.25rem] font-semibold leading-[1.04] tracking-[-0.045em] text-ink-900">
             Every answer,
             <br />

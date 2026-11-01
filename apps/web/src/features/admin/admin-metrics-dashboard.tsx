@@ -14,8 +14,8 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Alert } from '../../components/ui/alert';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+import { Tag } from '../../components/ui/tag';
 import {
   Card,
   CardContent,
@@ -317,9 +317,9 @@ function DailyVolumeCard({ daily, days }: { daily: UsageDailyPoint[]; days: numb
             status.
           </CardDescription>
         </div>
-        <Badge variant={totalErrors > 0 ? 'warning' : 'verified'} dot>
-          {totalErrors > 0 ? `${totalErrors} errors` : 'No saved errors'}
-        </Badge>
+        {totalErrors > 0 ? (
+          <Tag variant="danger">{totalErrors} errors</Tag>
+        ) : null}
       </CardHeader>
       <CardContent>
         <figure>
@@ -616,9 +616,9 @@ function TopFailingCard({ questions }: { questions: AdminUsageMetrics['top_faili
                     Last seen {formatDateTime(item.last_at)}
                   </p>
                 </div>
-                <Badge variant="warning" className="shrink-0">
+                <Tag variant="neutral" className="shrink-0">
                   {item.count}×
-                </Badge>
+                </Tag>
               </li>
             ))}
           </ol>

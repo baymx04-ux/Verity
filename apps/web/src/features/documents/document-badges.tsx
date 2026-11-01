@@ -1,4 +1,4 @@
-import { Badge } from '../../components/ui/badge';
+import { Tag } from '../../components/ui/tag';
 import {
   ACCESS_LEVEL_LABELS,
   DOCUMENT_STATUS_LABELS,
@@ -14,14 +14,7 @@ const statusVariants: Record<DocumentStatus, 'verified' | 'info' | 'warning' | '
 };
 
 export function DocumentStatusBadge({ status }: { status: DocumentStatus }) {
-  return (
-    <Badge variant={statusVariants[status]}>
-      {status === 'ready' ? (
-        <span aria-hidden="true" className="size-1.5 rounded-full bg-verified" />
-      ) : null}
-      {DOCUMENT_STATUS_LABELS[status]}
-    </Badge>
-  );
+  return <Tag variant={statusVariants[status]}>{DOCUMENT_STATUS_LABELS[status]}</Tag>;
 }
 
 const accessVariants: Record<AccessLevel, 'info' | 'neutral' | 'warning'> = {
@@ -31,5 +24,5 @@ const accessVariants: Record<AccessLevel, 'info' | 'neutral' | 'warning'> = {
 };
 
 export function DocumentAccessBadge({ level }: { level: AccessLevel }) {
-  return <Badge variant={accessVariants[level]}>{ACCESS_LEVEL_LABELS[level]}</Badge>;
+  return <Tag variant={accessVariants[level]}>{ACCESS_LEVEL_LABELS[level]}</Tag>;
 }

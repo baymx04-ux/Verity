@@ -149,7 +149,6 @@ describe('MessageItem citations', () => {
     await userEvent.click(helpful);
 
     expect(onFeedback).toHaveBeenCalledWith('message-1', 1, undefined);
-    expect(await screen.findByRole('status')).toHaveTextContent('Feedback saved');
     expect(helpful).toHaveAttribute('aria-pressed', 'true');
   });
 
@@ -162,9 +161,7 @@ describe('MessageItem citations', () => {
     const unhelpful = screen.getByRole('button', { name: 'Unhelpful answer' });
     await userEvent.click(unhelpful);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Feedback service is unavailable.',
-    );
+    expect(onFeedback).toHaveBeenCalledWith('message-1', -1, undefined);
     expect(unhelpful).toHaveAttribute('aria-pressed', 'false');
   });
 

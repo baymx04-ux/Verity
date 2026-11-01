@@ -60,7 +60,7 @@ describe('SqlPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Truncated')).toBeInTheDocument();
+    expect(screen.getByText('Truncated at 200 rows')).toBeInTheDocument();
     expect(screen.getByText(/Showing first 200 rows/)).toBeInTheDocument();
   });
 });

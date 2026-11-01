@@ -2,9 +2,9 @@ import { CheckCircle2, Database, RefreshCw, Save, Table2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Alert } from '../../components/ui/alert';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Spinner } from '../../components/ui/spinner';
+import { Tag } from '../../components/ui/tag';
 import { Textarea } from '../../components/ui/textarea';
 import {
   type SchemaCatalogView,
@@ -182,9 +182,6 @@ export function SchemaCatalogEditor() {
               <Database aria-hidden="true" className="size-4" />
             </span>
             <h2 className="font-display text-display-md text-ink-900">Text-to-SQL catalog</h2>
-            <Badge variant="analyst" dot>
-              Admin editable
-            </Badge>
           </div>
           <p className="mt-1.5 max-w-2xl text-body-sm leading-relaxed text-ink-500">
             Descriptions and example values ground the model in the read-only business views.
@@ -351,7 +348,7 @@ export function SchemaCatalogEditor() {
                       <code className="rounded-[5px] border border-line bg-surface px-1.5 py-0.5 font-mono text-[11px] font-semibold text-ink-900 shadow-xs">
                         {column.name}
                       </code>
-                      <Badge variant="neutral">{column.type}</Badge>
+                      <Tag variant="neutral">{column.type}</Tag>
                       {column.nullable ? (
                         <span className="text-[10px] text-ink-400">nullable</span>
                       ) : null}

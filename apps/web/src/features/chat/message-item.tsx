@@ -13,12 +13,10 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 import { SqlPanel, type SqlResult } from '../../components/sql/SqlPanel';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Dialog } from '../../components/ui/dialog';
 import { IconButton } from '../../components/ui/icon-button';
-import { Textarea } from '../../components/ui/textarea';
+import { Tag } from '../../components/ui/tag';
 import type { ChatMessage, Citation, SqlResultPreview } from './chat-api';
+import { FeedbackDialog } from './feedback-dialog';
 
 const CITATION_HREF_PATTERN = /^#citation-(\d{1,3})$/;
 
@@ -68,10 +66,6 @@ export function MessageItem({
   const [feedbackRating, setFeedbackRating] = useState<1 | -1 | null>(
     (message.feedback?.rating as 1 | -1) ?? null,
   );
-  const [feedbackComment, setFeedbackComment] = useState(message.feedback?.comment ?? '');
-  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
   const handleCopy = async () => {
     try {
@@ -86,41 +80,10 @@ export function MessageItem({
   const handleVote = async (rating: 1 | -1) => {
     const previousRating = feedbackRating;
     setFeedbackRating(rating);
-    setIsSubmittingFeedback(true);
-    setFeedbackError(null);
-    setFeedbackNotice(null);
     try {
-      await onFeedback(message.id, rating, feedbackComment || undefined);
-      setFeedbackNotice('Feedback saved');
+      await onFeedback(message.id, rating, undefined);
     } catch (error) {
       setFeedbackRating(previousRating);
-      setFeedbackError(
-        error instanceof Error && error.message
-          ? error.message
-          : 'Feedback could not be saved. Check your connection and try again.',
-      );
-    } finally {
-      setIsSubmittingFeedback(false);
-    }
-  };
-
-  const handleSaveComment = async () => {
-    if (!feedbackRating) return;
-    setIsSubmittingFeedback(true);
-    setFeedbackError(null);
-    setFeedbackNotice(null);
-    try {
-      await onFeedback(message.id, feedbackRating, feedbackComment);
-      setFeedbackNotice('Comment saved');
-      setCommentDialogOpen(false);
-    } catch (error) {
-      setFeedbackError(
-        error instanceof Error && error.message
-          ? error.message
-          : 'Your comment could not be saved. Please try again.',
-      );
-    } finally {
-      setIsSubmittingFeedback(false);
     }
   };
 
@@ -321,19 +284,19 @@ export function MessageItem({
         </div>
         <div className="flex items-center gap-2">
           {message.route && (
-            <Badge
+            <Tag
               variant={
                 message.route === 'documents'
-                  ? 'info'
+                  ? 'neutral'
                   : message.route === 'sql'
-                    ? 'live'
+                    ? 'info'
                     : message.route === 'hybrid'
                       ? 'analyst'
                       : 'neutral'
               }
             >
               {routeLabel}
-            </Badge>
+            </Tag>
           )}
           {message.latency_ms ? (
             <span className="hidden items-center gap-1 font-mono text-[10px] text-ink-400 sm:inline-flex">
@@ -381,7 +344,6 @@ export function MessageItem({
             variant="subtle"
             aria-label="Helpful answer"
             aria-pressed={feedbackRating === 1}
-            disabled={isSubmittingFeedback}
             onClick={() => handleVote(1)}
             className={feedbackRating === 1 ? 'bg-verified-bg text-verified-text' : ''}
           >
@@ -392,7 +354,6 @@ export function MessageItem({
             variant="subtle"
             aria-label="Unhelpful answer"
             aria-pressed={feedbackRating === -1}
-            disabled={isSubmittingFeedback}
             onClick={() => handleVote(-1)}
             className={feedbackRating === -1 ? 'bg-danger-bg text-danger-text' : ''}
           >
@@ -401,24 +362,12 @@ export function MessageItem({
           {feedbackRating !== null && (
             <button
               type="button"
-              onClick={() => {
-                setFeedbackError(null);
-                setCommentDialogOpen(true);
-              }}
+              onClick={() => setCommentDialogOpen(true)}
               className="text-[10px] text-ink-500 hover:text-ink-900 underline underline-offset-2 ml-1"
             >
-              {feedbackComment ? 'Edit comment' : 'Add comment'}
+              {feedbackRating ? 'Edit comment' : 'Add comment'}
             </button>
           )}
-          {feedbackError ? (
-            <span role="alert" className="ml-1 max-w-[22rem] text-[10px] text-danger-text">
-              {feedbackError}
-            </span>
-          ) : feedbackNotice ? (
-            <span role="status" className="ml-1 text-[10px] text-verified-text">
-              {feedbackNotice}
-            </span>
-          ) : null}
         </div>
 
         <div className="flex items-center gap-2">
@@ -457,59 +406,13 @@ export function MessageItem({
         </div>
       </footer>
 
-      <Dialog
+      <FeedbackDialog
         open={commentDialogOpen}
         onClose={() => setCommentDialogOpen(false)}
-        title="Leave Answer Feedback"
-        description="Your feedback is stored with this answer for later review."
-      >
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-label-md">
-            <span>Rating:</span>
-            <Badge variant={feedbackRating === 1 ? 'verified' : 'danger'}>
-              {feedbackRating === 1 ? 'Helpful' : 'Unhelpful'}
-            </Badge>
-          </div>
-          <div>
-            <label htmlFor="feedback-comment" className="block text-label-md text-ink-700 mb-1">
-              Comment (optional)
-            </label>
-            <Textarea
-              id="feedback-comment"
-              value={feedbackComment}
-              onChange={(e) => setFeedbackComment(e.target.value)}
-              placeholder="What could be improved or verified more accurately?"
-              rows={3}
-            />
-          </div>
-          {feedbackError ? (
-            <p
-              role="alert"
-              className="rounded-[8px] border border-danger-border bg-danger-bg px-3 py-2 text-body-sm text-danger-text"
-            >
-              {feedbackError}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setCommentDialogOpen(false)}
-              disabled={isSubmittingFeedback}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSaveComment}
-              disabled={isSubmittingFeedback}
-            >
-              {isSubmittingFeedback ? 'Saving…' : 'Save feedback'}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+        messageId={message.id}
+        initialRating={feedbackRating}
+        onSubmit={onFeedback}
+      />
     </article>
   );
 }

@@ -1,6 +1,5 @@
 import { ShieldCheck } from 'lucide-react';
 
-import { Badge } from '../components/ui/badge';
 import { AdminMetricsDashboard } from '../features/admin/admin-metrics-dashboard';
 import { SchemaCatalogEditor } from '../features/admin/schema-catalog-editor';
 
@@ -16,9 +15,6 @@ export function AdminPage() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2.5">
           <h1 className="font-display text-display-lg text-ink-900">Admin</h1>
-          <Badge variant="warning" dot>
-            Admin only
-          </Badge>
         </div>
         <p className="mt-1.5 max-w-2xl text-body-md leading-relaxed text-ink-500">
           Usage, quality signals, and the data catalog for workspace administrators.

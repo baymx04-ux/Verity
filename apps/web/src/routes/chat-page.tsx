@@ -13,7 +13,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SqlPanel } from '../components/sql/SqlPanel';
 import { Alert } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Dialog } from '../components/ui/dialog';
 import { IconButton } from '../components/ui/icon-button';
@@ -559,9 +558,6 @@ export function ChatPage() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="truncate font-display text-display-md text-ink-900">Ask Verity</h1>
-                <Badge variant="verified" dot>
-                  Grounded answers
-                </Badge>
               </div>
               <p className="mt-1 truncate text-body-sm text-ink-500">{activeConversationTitle}</p>
             </div>
@@ -633,25 +629,17 @@ export function ChatPage() {
                     <p className="mt-2 text-body-sm text-ink-500">Retrieving saved messages…</p>
                   </div>
                 ) : messages.length === 0 && !isStreaming ? (
-                  <div className="mx-auto flex h-full max-w-3xl flex-col justify-center py-6">
-                    <div className="text-center">
-                      <span className="mx-auto flex size-14 items-center justify-center rounded-[16px] border border-line bg-surface shadow-elevated">
-                        <img src="/verity-logo.png" alt="" className="size-9 object-contain" />
-                      </span>
-                      <h2 className="mt-8 font-display text-display-lg tracking-display text-ink-900">
-                        Ask anything about your work
-                      </h2>
-                      <p className="mx-auto mt-2 max-w-lg text-body-md leading-relaxed text-ink-500">
-                        Verity answers from your indexed documents and company data. Every answer
-                        keeps its sources, so you can verify the passage or query behind it.
-                      </p>
-                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                        <Badge variant="info">Access-filtered sources</Badge>
-                        <Badge variant="neutral">Inline citations</Badge>
-                        <Badge variant="verified">Read-only data</Badge>
-                      </div>
-                    </div>
-
+                      <div className="mx-auto flex h-full max-w-3xl flex-col justify-center py-6">
+                        <span className="mx-auto flex size-14 items-center justify-center rounded-[16px] border border-line bg-surface shadow-elevated">
+                          <img src="/verity-logo.png" alt="" className="size-9 object-contain" />
+                        </span>
+                        <h2 className="mt-8 font-display text-display-lg tracking-display text-ink-900">
+                          Ask anything about your work
+                        </h2>
+                        <p className="mx-auto mt-2 max-w-lg text-body-md leading-relaxed text-ink-500">
+                          Verity answers from your indexed documents and company data. Every answer
+                          keeps its sources, so you can verify the passage or query behind it.
+                        </p>
                     <div className="mt-9">
                       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-400">
                         Start with a question
@@ -730,10 +718,14 @@ export function ChatPage() {
                             />
                             <span className="text-label-md font-semibold text-ink-900">Verity</span>
                             <span aria-hidden="true" className="h-3 w-px bg-line-strong" />
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-action-border bg-action-tint px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-action">
+                            <span className="flex items-center gap-1.5 text-[10px] font-medium text-ink-600">
                               <span
                                 aria-hidden="true"
-                                className="size-1.5 animate-pulse-soft rounded-full bg-action-accent"
+                                className={`size-1.5 shrink-0 rounded-full ${
+                                  streamingStatus?.includes('error') || streamingStatus?.includes('failed')
+                                    ? 'bg-danger'
+                                    : 'bg-action-accent'
+                                }`}
                               />
                               {streamingStatus || 'Generating answer…'}
                             </span>

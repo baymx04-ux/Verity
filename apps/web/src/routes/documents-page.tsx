@@ -10,7 +10,6 @@ import {
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 
 import { Alert } from '../components/ui/alert';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
@@ -18,6 +17,7 @@ import { Input } from '../components/ui/input';
 import { Pagination } from '../components/ui/pagination';
 import { Select } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
+import { Tag } from '../components/ui/tag';
 import {
   Table,
   TableBody,
@@ -300,7 +300,7 @@ export function DocumentsPage() {
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2.5">
             <h1 className="font-display text-display-lg text-ink-900">Documents</h1>
-            <Badge variant="neutral">{total.toLocaleString()} indexed sources</Badge>
+            <Tag variant="neutral">{total.toLocaleString()} indexed sources</Tag>
           </div>
           <p className="mt-1.5 max-w-2xl text-body-md leading-relaxed text-ink-500">
             Upload policy, handbook, and product documents. Verity parses, chunks, and embeds each
@@ -390,9 +390,9 @@ export function DocumentsPage() {
             <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-400">
               Active filters
             </span>
-            {query.search ? <Badge variant="info">Title: {query.search}</Badge> : null}
-            {query.status ? <Badge variant="neutral">{query.status}</Badge> : null}
-            {query.accessLevel ? <Badge variant="neutral">{query.accessLevel}</Badge> : null}
+            {query.search ? <Tag variant="info">Title: {query.search}</Tag> : null}
+            {query.status ? <Tag variant="neutral">{query.status}</Tag> : null}
+            {query.accessLevel ? <Tag variant="neutral">{query.accessLevel}</Tag> : null}
             <Button size="sm" variant="ghost" onClick={clearFilters}>
               Clear
             </Button>

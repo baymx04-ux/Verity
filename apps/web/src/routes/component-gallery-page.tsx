@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { Accordion } from '../components/ui/accordion';
 import { Alert } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
   Card,
@@ -42,6 +41,7 @@ import {
 import { Tabs } from '../components/ui/tabs';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip } from '../components/ui/tooltip';
+import { Tag } from '../components/ui/tag';
 
 function Section({
   title,
@@ -73,8 +73,7 @@ export function ComponentGalleryPage() {
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 sm:px-6 lg:px-8">
       <header className="mb-8">
-        <Badge variant="warning">Development only</Badge>
-        <h1 className="mt-2 font-display text-display-lg text-ink-900">Component gallery</h1>
+        <h1 className="font-display text-display-lg text-ink-900">Component gallery</h1>
         <p className="mt-1 max-w-2xl text-body-md text-ink-500">
           Visual reference for the Verity design system. This route is excluded from production
           navigation and only exists in development builds.
@@ -101,12 +100,14 @@ export function ComponentGalleryPage() {
           <Spinner label="Loading preview" />
         </Section>
 
-        <Section title="Badges" description="Status and filter pills.">
-          <Badge>Neutral</Badge>
-          <Badge variant="verified">Verified</Badge>
-          <Badge variant="info">Info</Badge>
-          <Badge variant="warning">Warning</Badge>
-          <Badge variant="danger">Danger</Badge>
+        <Section title="Tags" description="Small context tags for counts, states, and roles.">
+          <Tag>Neutral</Tag>
+          <Tag variant="verified">Verified</Tag>
+          <Tag variant="info">Info</Tag>
+          <Tag variant="warning">Warning</Tag>
+          <Tag variant="danger">Danger</Tag>
+          <Tag variant="analyst">Analyst</Tag>
+          <Tag variant="restricted">Restricted</Tag>
         </Section>
 
         <Section title="Avatars" description="Initials fall back to the local part of an email.">
@@ -223,9 +224,15 @@ export function ComponentGalleryPage() {
                 <TableRow key={document}>
                   <TableCell className="font-medium text-ink-900">{document}</TableCell>
                   <TableCell>{owner}</TableCell>
-                  <TableCell>
-                    <Badge variant={status === 'Indexed' ? 'verified' : 'warning'}>{status}</Badge>
-                  </TableCell>
+                    <TableCell>
+                      <Tag
+                        variant={
+                          status === 'Indexed' ? 'verified' : status === 'Processing' ? 'warning' : 'neutral'
+                        }
+                      >
+                        {status}
+                      </Tag>
+                    </TableCell>
                   <TableCell className="tabular text-right">{chunks}</TableCell>
                 </TableRow>
               ))}

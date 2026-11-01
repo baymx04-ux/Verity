@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useId } from 'react';
 import { ChevronDown, Copy, Check, Download, Database, AlertTriangle } from 'lucide-react';
+import { Tag } from '../../components/ui/tag';
 
 export interface SqlResult {
   sql: string;
@@ -100,8 +101,8 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
 
       {/* SQL block */}
       <div className="border-t border-line px-4 pb-4 pt-3">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <span className="text-label-sm uppercase tracking-wider text-ink-400">SQL</span>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="text-label-sm text-ink-400">SQL</span>
           <button
             type="button"
             onClick={handleCopy}
@@ -121,21 +122,17 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
         {/* Result header */}
         <div className="mt-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-label-sm uppercase tracking-wider text-ink-400">Results</span>
-            <span className="rounded-full border border-line bg-canvas-subtle px-2 py-0.5 font-mono text-label-sm text-ink-600">
+            <span className="text-label-sm text-ink-400">Results</span>
+            <Tag variant="neutral" className="font-mono text-[11px]">
               {result.row_count} row{result.row_count !== 1 ? 's' : ''}
-            </span>
+            </Tag>
             {result.truncated && (
-              <span
-                className="flex items-center gap-1 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-label-sm text-warning-text"
-                title="Results were capped at 200 rows. Download CSV to see more."
-              >
-                <AlertTriangle aria-hidden="true" className="size-3" />
-                Truncated
-              </span>
+              <Tag variant="warning" className="text-[11px]" title="Results were capped at 200 rows. Download CSV to see more.">
+                <AlertTriangle aria-hidden="true" className="mr-1 size-3" />
+                Truncated at 200 rows
+              </Tag>
             )}
-          </div>
-          {result.rows.length > 0 && (
+            {result.rows.length > 0 && (
             <button
               type="button"
               onClick={handleCsvDownload}
@@ -147,6 +144,7 @@ export function SqlPanel({ result, className = '' }: SqlPanelProps) {
             </button>
           )}
         </div>
+      </div>
 
         {/* Result table */}
         {result.rows.length > 0 ? (
@@ -235,7 +233,7 @@ function ResultTable({ columns, rows, sortCol, sortDir, onSort }: ResultTablePro
               <th
                 key={col}
                 scope="col"
-                className="cursor-pointer select-none px-3 py-2 font-medium uppercase tracking-wider text-ink-500 transition-colors hover:text-ink-900"
+                className="cursor-pointer select-none px-3 py-2 font-medium text-ink-500 transition-colors hover:text-ink-900"
                 onClick={() => onSort(col)}
                 aria-sort={
                   sortCol === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'

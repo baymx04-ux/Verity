@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../../features/auth/use-auth';
-import { EnvironmentBadge } from './environment-badge';
+import { StatusText } from '../../components/ui/status-text';
 import { OnlineStatusBanner } from './online-status-banner';
 import { UserMenu } from './user-menu';
 
@@ -103,21 +103,11 @@ export function AppShell() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <span
-              className="hidden items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[11px] font-medium text-ink-600 shadow-xs lg:inline-flex"
-              title={isOnline ? 'Your browser is connected' : 'Your browser is offline'}
-            >
-              <span
-                aria-hidden="true"
-                className={`size-1.5 rounded-full ${
-                  isOnline ? 'bg-verified animate-pulse-soft' : 'bg-danger'
-                }`}
-              />
-              {isOnline ? 'Workspace online' : 'Offline'}
-            </span>
-            <span className="hidden sm:inline-flex">
-              <EnvironmentBadge />
-            </span>
+            <StatusText
+              variant={isOnline ? 'online' : 'offline'}
+              label={isOnline ? 'Workspace online' : 'Offline'}
+              className="hidden sm:inline-flex"
+            />
             <UserMenu />
           </div>
         </div>

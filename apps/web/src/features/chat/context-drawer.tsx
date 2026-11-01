@@ -1,7 +1,7 @@
 import { Check, Copy, ExternalLink, FileText, Quote, ShieldCheck, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Badge } from '../../components/ui/badge';
+import { Tag } from '../../components/ui/tag';
 import { IconButton } from '../../components/ui/icon-button';
 import type { Citation } from './chat-api';
 
@@ -70,9 +70,9 @@ export function ContextDrawer({
             <ShieldCheck className="size-4 shrink-0 text-verified" aria-hidden="true" />
             <h2 className="truncate font-display text-display-sm text-ink-900">Source evidence</h2>
             {citations.length > 0 ? (
-              <Badge variant="verified">
+              <Tag variant="neutral">
                 {citations.length} {citations.length === 1 ? 'source' : 'sources'}
-              </Badge>
+              </Tag>
             ) : null}
           </div>
           {onClose ? (
@@ -149,9 +149,9 @@ export function ContextDrawer({
                         </p>
                       </div>
                     </div>
-                    <Badge variant="verified" className="shrink-0">
+                    <Tag variant="neutral">
                       {scorePercent}% match
-                    </Badge>
+                    </Tag>
                   </div>
 
                   <div className="mt-3 rounded-nested border border-line bg-canvas-subtle/80 p-3">
