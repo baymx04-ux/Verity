@@ -21,7 +21,7 @@ Two things have **not** been measured yet, and no numbers are asserted for them:
   has unit/integration tests, but a full from-clean-volume boot with real model
   keys has not been verified end to end.
 
-See [`plan.md`](./plan.md) for behavior and [`design.md`](./design.md) for the
+See [`plan.md`](./plan.md) for behavior and [`new_design.md`](./new_design.md) for the
 visual system.
 
 ## Quick start
@@ -390,8 +390,10 @@ make e2e              # Playwright end-to-end suite
 
 ## Design and delivery decisions
 
-- `plan.md` is authoritative for behavior and architecture; `design.md` is
-  authoritative for visuals. Conflicts are recorded as C1–C12 in
+- `plan.md` is authoritative for behavior and architecture; `new_design.md` is
+  authoritative for visuals — the UI was redesigned from that spec
+  ("Tactile Enterprise Dimensionality"), superseding the older `design.md`.
+  Conflicts are recorded as C1–C12 in
   [`docs/implementation-plan.md`](./docs/implementation-plan.md).
 - The design spec's multi-warehouse connectors, global search, cryptographic
   "attestation", fabricated scan counts, and manual route selector are **not**
@@ -410,7 +412,7 @@ make e2e              # Playwright end-to-end suite
 ## Documentation
 
 - [`plan.md`](./plan.md) — product and engineering source of truth
-- [`design.md`](./design.md) — visual system and UX
+- [`new_design.md`](./new_design.md) — visual system and UX used for the current UI
 - [`docs/implementation-plan.md`](./docs/implementation-plan.md) — phases, risks, conflict resolutions, open questions
 - [`docs/architecture.md`](./docs/architecture.md) — services, schemas, roles, startup order, observability
 - [`docs/security.md`](./docs/security.md) — authentication, RBAC, rate limiting, safety, database roles
