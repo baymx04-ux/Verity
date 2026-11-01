@@ -91,6 +91,59 @@ gitignored; never commit it.
 Stop with `docker compose down`. `make clean` also deletes the Postgres, Redis,
 and MinIO volumes, including uploaded documents.
 
+## Deploy on Render
+
+The fastest way to run Verity in production is on [Render](https://render.com)
+using the `render.yaml` blueprint. It provisions all five services
+(PostgreSQL + pgvector, Redis, AI service, API gateway, and web frontend) from
+this GitHub repo.
+
+### Prerequisites
+
+- A [Render account](https://render.com/signup)
+- A **Google Gemini API key** from [Google AI Studio](https://aistudio.google.com/)
+- This repo pushed to GitHub
+
+### Steps
+
+1. **Push to GitHub**
+   ```bash
+   git add .
+   git commit -m "Add Render deployment config"
+   git push origin main
+   ```
+
+2. **Create the blueprint**
+   - Open [Render Dashboard](https://dashboard.render.com/)
+   - Click **"New +" → "Blueprint"**
+   - Connect GitHub and select the `Verity` repository
+   - Render detects `render.yaml` and previews all five services
+   - Click **"Apply"**
+
+3. **Set required secrets**
+   In the Render dashboard, set `GOOGLE_API_KEY` on the `verity-ai` service
+   (your Google Gemini API key). All other secrets — `JWT_ACCESS_SECRET`,
+   `JWT_REFRESH_SECRET`, `INTERNAL_SERVICE_TOKEN`, database passwords — are
+   auto-generated.
+
+4. **Run migrations**
+   After all services are healthy, apply the SQL migrations in
+   `infra/postgres/migrations/` against the Postgres service, in filename order.
+
+### Service URLs (after deployment)
+
+| Service | URL |
+|---------|-----|
+| Web app | `https://verity-web.onrender.com` |
+| API gateway | `https://verity-api.onrender.com` |
+| AI service | `https://verity-ai.onrender.com` |
+
+The `render.yaml` blueprint wires service URLs between containers automatically
+(`AI_SERVICE_URL`, `POSTGRES_HOST`, `REDIS_URL`, `WEB_ORIGIN`), so no manual
+connection-string copying is required. See [`DEPLOY.md`](./DEPLOY.md) for the
+full deployment reference.
+
+
 ## What exists now
 
 - Monorepo: `apps/web` (React 18, TypeScript strict, Vite, Tailwind, React

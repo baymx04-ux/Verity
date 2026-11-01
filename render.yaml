@@ -1,0 +1,188 @@
+# Render.com blueprint for Verity
+#
+# Deploy: connect this GitHub repo to Render, then create a "Blueprint"
+# from this file. Render will provision all services automatically.
+#
+# Required secrets you must set in the Render dashboard (or as render.yaml
+# envVars with generateValue: true where indicated):
+#   - GOOGLE_API_KEY        (AI service - your Google Gemini API key)
+#   - JWT_ACCESS_SECRET     (auto-generated if left to render)
+#   - JWT_REFRESH_SECRET    (auto-generated if left to render)
+#   - INTERNAL_SERVICE_TOKEN (auto-generated if left to render)
+#
+# Services are defined in dependency order: Postgres -> Redis -> AI -> API -> Web.
+
+services:
+
+  # ------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector
+  # Deployed as a web service because Render's managed PostgreSQL does
+  # not include the pgvector extension required by the AI service.
+  # ------------------------------------------------------------------
+  - name: verity-postgres
+    type: web
+    env: docker
+    region: oregon
+    plan: starter
+    disk:
+      name: verity-postgres-data
+      size: 10
+    dockerfilePath: infra/postgres/Dockerfile
+    envVars:
+      - key: POSTGRES_DB
+        value: verity
+      - key: POSTGRES_USER
+        value: postgres
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: VERITY_APP_USER
+        value: verity_app
+      - key: VERITY_APP_PASSWORD
+        generateValue: true
+      - key: SQL_RO_USER
+        value: verity_sql_ro
+      - key: SQL_RO_PASSWORD
+        generateValue: true
+
+  # ------------------------------------------------------------------
+  # Redis (caching, rate limiting, BullMQ queue)
+  # ------------------------------------------------------------------
+  - name: verity-redis
+    type: redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+  # ------------------------------------------------------------------
+  # AI service (Python FastAPI — RAG, embeddings, SQL generation)
+  # ------------------------------------------------------------------
+  - name: verity-ai
+    type: web
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: services/ai/Dockerfile
+    envVars:
+      - key: POSTGRES_HOST
+        fromService:
+          name: verity-postgres
+          property: host
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: verity
+      - key: POSTGRES_SUPERUSER
+        value: postgres
+      - key: POSTGRES_PASSWORD
+        fromService:
+          name: verity-postgres
+          property: password
+      - key: VERITY_APP_USER
+        fromService:
+          name: verity-postgres
+          property: env.VERITY_APP_USER
+      - key: VERITY_APP_PASSWORD
+        fromService:
+          name: verity-postgres
+          property: env.VERITY_APP_PASSWORD
+      - key: SQL_RO_USER
+        fromService:
+          name: verity-postgres
+          property: env.SQL_RO_USER
+      - key: SQL_RO_PASSWORD
+        fromService:
+          name: verity-postgres
+          property: env.SQL_RO_PASSWORD
+      - key: REDIS_URL
+        fromService:
+          name: verity-redis
+          property: url
+      - key: LLM_PROVIDER
+        value: google
+      - key: LLM_MODEL
+        value: gemini-3.6-flash
+      - key: EMBEDDING_PROVIDER
+        value: google
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: EMBEDDING_DIM
+        value: "768"
+      - key: RERANKER
+        value: none
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: LOG_LEVEL
+        value: info
+    healthCheckPath: /health
+
+  # ------------------------------------------------------------------
+  # API gateway (Express/Node.js — auth, chat, admin, metrics, SQL)
+  # ------------------------------------------------------------------
+  - name: verity-api
+    type: web
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: apps/api/Dockerfile
+    envVars:
+      - key: POSTGRES_HOST
+        fromService:
+          name: verity-postgres
+          property: host
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_DB
+        value: verity
+      - key: POSTGRES_SUPERUSER
+        value: postgres
+      - key: POSTGRES_PASSWORD
+        fromService:
+          name: verity-postgres
+          property: password
+      - key: VERITY_APP_USER
+        fromService:
+          name: verity-postgres
+          property: env.VERITY_APP_USER
+      - key: VERITY_APP_PASSWORD
+        fromService:
+          name: verity-postgres
+          property: env.VERITY_APP_PASSWORD
+      - key: REDIS_URL
+        fromService:
+          name: verity-redis
+          property: url
+      - key: AI_SERVICE_URL
+        fromService:
+          name: verity-ai
+          property: protocolAndHost
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: INTERNAL_SERVICE_TOKEN
+        generateValue: true
+      - key: WEB_ORIGIN
+        fromService:
+          name: verity-web
+          property: protocolAndHost
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /health
+
+  # ------------------------------------------------------------------
+  # Web frontend (React + Vite, served by nginx)
+  # ------------------------------------------------------------------
+  - name: verity-web
+    type: web
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: apps/web/Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: VITE_API_URL
+        fromService:
+          name: verity-api
+          property: protocolAndHost
+    healthCheckPath: /
