@@ -8,6 +8,7 @@ services:
     plan: starter
     disk:
       name: verity-postgres-data
+      mountPath: /var/lib/postgresql/data
     dockerfilePath: infra/postgres/Dockerfile
     envVars:
       - key: POSTGRES_DB
@@ -31,6 +32,13 @@ services:
     region: oregon
     plan: starter
     maxmemoryPolicy: allkeys-lru
+    ipAllowList:
+      - source: service
+        sourceService: verity-ai
+        description: Allow AI service to connect to Redis
+      - source: service
+        sourceService: verity-api
+        description: Allow API gateway to connect to Redis
 
   # AI service (FastAPI — RAG, embeddings, SQL generation)
   - name: verity-ai
@@ -43,6 +51,7 @@ services:
       - key: POSTGRES_HOST
         fromService:
           name: verity-postgres
+          type: web
           property: host
       - key: POSTGRES_PORT
         value: "5432"
@@ -53,26 +62,32 @@ services:
       - key: POSTGRES_PASSWORD
         fromService:
           name: verity-postgres
+          type: web
           property: password
       - key: VERITY_APP_USER
         fromService:
           name: verity-postgres
+          type: web
           property: env.VERITY_APP_USER
       - key: VERITY_APP_PASSWORD
         fromService:
           name: verity-postgres
+          type: web
           property: env.VERITY_APP_PASSWORD
       - key: SQL_RO_USER
         fromService:
           name: verity-postgres
+          type: web
           property: env.SQL_RO_USER
       - key: SQL_RO_PASSWORD
         fromService:
           name: verity-postgres
+          type: web
           property: env.SQL_RO_PASSWORD
       - key: REDIS_URL
         fromService:
           name: verity-redis
+          type: redis
           property: url
       - key: LLM_PROVIDER
         value: google
@@ -103,6 +118,7 @@ services:
       - key: POSTGRES_HOST
         fromService:
           name: verity-postgres
+          type: web
           property: host
       - key: POSTGRES_PORT
         value: "5432"
@@ -113,22 +129,27 @@ services:
       - key: POSTGRES_PASSWORD
         fromService:
           name: verity-postgres
+          type: web
           property: password
       - key: VERITY_APP_USER
         fromService:
           name: verity-postgres
+          type: web
           property: env.VERITY_APP_USER
       - key: VERITY_APP_PASSWORD
         fromService:
           name: verity-postgres
+          type: web
           property: env.VERITY_APP_PASSWORD
       - key: REDIS_URL
         fromService:
           name: verity-redis
+          type: redis
           property: url
       - key: AI_SERVICE_URL
         fromService:
           name: verity-ai
+          type: web
           property: protocolAndHost
       - key: JWT_ACCESS_SECRET
         generateValue: true
@@ -139,6 +160,7 @@ services:
       - key: WEB_ORIGIN
         fromService:
           name: verity-web
+          type: web
           property: protocolAndHost
       - key: NODE_ENV
         value: production
@@ -157,5 +179,6 @@ services:
       - key: VITE_API_URL
         fromService:
           name: verity-api
+          type: web
           property: protocolAndHost
     healthCheckPath: /
