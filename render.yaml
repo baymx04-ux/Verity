@@ -26,7 +26,7 @@ services:
     plan: starter
     disk:
       name: verity-postgres-data
-      size: 10
+      size_gb: 10
     dockerfilePath: infra/postgres/Dockerfile
     envVars:
       - key: POSTGRES_DB
