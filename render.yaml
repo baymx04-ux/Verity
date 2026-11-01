@@ -8,7 +8,7 @@ services:
     plan: starter
     disk:
       name: verity-postgres-data
-      dockerfilePath: infra/postgres/Dockerfile
+    dockerfilePath: infra/postgres/Dockerfile
     envVars:
       - key: POSTGRES_DB
         value: verity
