@@ -115,7 +115,10 @@ REVOKE EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) FROM PUB
 REVOKE EXECUTE ON FUNCTION pg_catalog.lo_import(text) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_catalog.lo_import(text, oid) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_terminate_backend(integer) FROM PUBLIC;
+-- PG16 note: pg_terminate_backend's only signature is (pid integer,
+-- timeout bigint DEFAULT 0); there is no bare (integer) overload anymore.
+-- Revoking PUBLIC execute on this signature blocks single-argument calls too.
+REVOKE EXECUTE ON FUNCTION pg_catalog.pg_terminate_backend(integer, bigint) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_catalog.pg_cancel_backend(integer) FROM PUBLIC;
 SQL
 
