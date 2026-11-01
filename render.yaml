@@ -32,11 +32,9 @@ services:
     region: oregon
     plan: starter
     maxmemoryPolicy: allkeys-lru
-    # source: service allows all internal services (verity-ai, verity-api) in the
-    # same region to connect. Render's blueprint spec does not support
-    # per-service allow-list entries.
-    ipAllowList:
-      - source: service
+    # CIDR blocks only. Empty list = internal connections only (verity-ai,
+    # verity-api can connect over Render's private network).
+    ipAllowList: []
 
   # AI service (FastAPI — RAG, embeddings, SQL generation)
   - name: verity-ai
@@ -61,32 +59,32 @@ services:
         fromService:
           name: verity-postgres
           type: web
-          property: password
+          envVarKey: POSTGRES_PASSWORD
       - key: VERITY_APP_USER
         fromService:
           name: verity-postgres
           type: web
-          property: env.VERITY_APP_USER
+          envVarKey: VERITY_APP_USER
       - key: VERITY_APP_PASSWORD
         fromService:
           name: verity-postgres
           type: web
-          property: env.VERITY_APP_PASSWORD
+          envVarKey: VERITY_APP_PASSWORD
       - key: SQL_RO_USER
         fromService:
           name: verity-postgres
           type: web
-          property: env.SQL_RO_USER
+          envVarKey: SQL_RO_USER
       - key: SQL_RO_PASSWORD
         fromService:
           name: verity-postgres
           type: web
-          property: env.SQL_RO_PASSWORD
+          envVarKey: SQL_RO_PASSWORD
       - key: REDIS_URL
         fromService:
           name: verity-redis
           type: redis
-          property: url
+          property: connectionString
       - key: LLM_PROVIDER
         value: google
       - key: LLM_MODEL
@@ -128,38 +126,38 @@ services:
         fromService:
           name: verity-postgres
           type: web
-          property: password
+          envVarKey: POSTGRES_PASSWORD
       - key: VERITY_APP_USER
         fromService:
           name: verity-postgres
           type: web
-          property: env.VERITY_APP_USER
+          envVarKey: VERITY_APP_USER
       - key: VERITY_APP_PASSWORD
         fromService:
           name: verity-postgres
           type: web
-          property: env.VERITY_APP_PASSWORD
+          envVarKey: VERITY_APP_PASSWORD
       - key: REDIS_URL
         fromService:
           name: verity-redis
           type: redis
-          property: url
+          property: connectionString
+      # Calls verity-ai over Render's private network (service name resolves
+      # internally; FastAPI listens on port 8000 per its Dockerfile).
       - key: AI_SERVICE_URL
-        fromService:
-          name: verity-ai
-          type: web
-          property: protocolAndHost
+        value: http://verity-ai:8000
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: INTERNAL_SERVICE_TOKEN
         generateValue: true
+      # Public URL of the web frontend (used for CORS origin checks).
+      # Render's default subdomain for the "verity-web" service. If Render
+      # appends a hash suffix on first deploy, update this value to match
+      # the actual subdomain shown in the dashboard.
       - key: WEB_ORIGIN
-        fromService:
-          name: verity-web
-          type: web
-          property: protocolAndHost
+        value: https://verity-web.onrender.com
       - key: NODE_ENV
         value: production
     healthCheckPath: /health
@@ -174,9 +172,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Public URL of the API, baked into the frontend at build time.
+      # Render's default subdomain for the "verity-api" service. If Render
+      # appends a hash suffix on first deploy, update this value to match
+      # the actual subdomain shown in the dashboard.
       - key: VITE_API_URL
-        fromService:
-          name: verity-api
-          type: web
-          property: protocolAndHost
+        value: https://verity-api.onrender.com
     healthCheckPath: /
