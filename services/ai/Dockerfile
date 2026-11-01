@@ -9,10 +9,10 @@ WORKDIR /app
 
 RUN groupadd --system verity && useradd --system --gid verity --create-home verity
 
-COPY services/ai/requirements.txt ./requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY services/ai/app ./app
+COPY app ./app
 
 RUN chown -R verity:verity /app
 USER verity
