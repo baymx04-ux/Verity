@@ -22,13 +22,13 @@ server {
     add_header X-Accel-Buffering no;
 
     location /api/ {
-        proxy_pass http://api:4000;
+        proxy_pass ${API_UPSTREAM};
     }
 
     # Internal session verification subrequest
     location = /_auth_verify {
         internal;
-        proxy_pass http://api:4000/api/auth/verify;
+        proxy_pass ${API_UPSTREAM}/api/auth/verify;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header X-Original-URI $request_uri;
@@ -66,6 +66,9 @@ server {
     location / {
         auth_request /_auth_verify;
         error_page 401 = @login_redirect;
+        # If the auth subrequest can't reach the API (e.g. it is still
+        # deploying), fall back to the login page instead of a 500.
+        error_page 500 502 503 504 = @login_redirect;
         try_files $uri $uri/ /index.html;
     }
 

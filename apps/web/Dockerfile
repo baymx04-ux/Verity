@@ -14,7 +14,12 @@ RUN npm run build --workspace @verity/web
 
 FROM nginx:1.27-alpine
 
-COPY infra/nginx/nginx.conf /etc/nginx/conf.d/default.conf
+# API upstream used by nginx (envsubst'd into default.conf by the nginx
+# entrypoint at startup). Default matches docker-compose; Render overrides it
+# to http://verity-api:4000 via the API_UPSTREAM env var.
+ENV API_UPSTREAM=http://api:4000
+
+COPY infra/nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80

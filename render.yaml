@@ -169,6 +169,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # nginx's API upstream over Render's private network.
+      - key: API_UPSTREAM
+        value: http://verity-api:4000
       # Public URL of the API, baked into the frontend at build time.
       # Render's default subdomain for the "verity-api" service. If Render
       # appends a hash suffix on first deploy, update this value to match
