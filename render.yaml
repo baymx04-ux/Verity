@@ -5,7 +5,7 @@ services:
     type: web
     env: docker
     region: oregon
-    plan: starter
+    plan: free
     disk:
       name: verity-postgres-data
       mountPath: /var/lib/postgresql/data
@@ -30,7 +30,7 @@ services:
   - name: verity-redis
     type: redis
     region: oregon
-    plan: starter
+    plan: free
     maxmemoryPolicy: allkeys-lru
     # CIDR blocks only. Empty list = internal connections only (verity-ai,
     # verity-api can connect over Render's private network).
@@ -41,7 +41,7 @@ services:
     type: web
     env: docker
     region: oregon
-    plan: starter
+    plan: free
     dockerfilePath: services/ai/Dockerfile
     envVars:
       - key: POSTGRES_HOST
@@ -108,7 +108,7 @@ services:
     type: web
     env: docker
     region: oregon
-    plan: starter
+    plan: free
     dockerfilePath: apps/api/Dockerfile
     envVars:
       - key: POSTGRES_HOST
@@ -167,7 +167,7 @@ services:
     type: web
     env: docker
     region: oregon
-    plan: starter
+    plan: free
     dockerfilePath: apps/web/Dockerfile
     envVars:
       - key: NODE_ENV
