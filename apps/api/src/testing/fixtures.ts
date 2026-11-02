@@ -10,6 +10,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     POSTGRES_HOST: 'localhost',
     POSTGRES_PORT: 5432,
     POSTGRES_DB: 'verity',
+    POSTGRES_SSLMODE: '',
     VERITY_APP_USER: 'verity_app',
     VERITY_APP_PASSWORD: 'test-password',
     REDIS_URL: 'redis://localhost:6379',
@@ -46,6 +47,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     ADMIN_RATE_LIMIT_PER_MIN: 1000,
     databaseUrl: 'postgresql://verity_app:test-password@localhost:5432/verity',
     minioUrl: 'http://localhost:9000',
+    minioEnabled: true,
     isProduction: false,
     ...overrides,
   };

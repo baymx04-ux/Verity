@@ -2,7 +2,7 @@ from datetime import date
 from functools import lru_cache
 from urllib.parse import quote
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,8 +23,15 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "verity"
+    # Managed providers (Neon, Supabase, Render Postgres) require TLS from
+    # clients outside their network. Empty means "let libpq decide".
+    postgres_sslmode: str = ""
+    # Full connection URLs. When set they take precedence over the POSTGRES_*
+    # parts above, which is what managed providers hand you.
+    database_url_override: str = Field("", validation_alias="DATABASE_URL")
+    sql_database_url_override: str = Field("", validation_alias="SQL_DATABASE_URL")
     verity_app_user: str = "verity_app"
-    verity_app_password: SecretStr
+    verity_app_password: SecretStr = SecretStr("")
 
     sql_ro_user: str = "verity_sql_ro"
     sql_ro_password: SecretStr = SecretStr("")
@@ -101,20 +108,32 @@ class Settings(BaseSettings):
     sql_max_relations: int = 8
     sql_reference_date: date = date(2026, 9, 30)
 
+    @model_validator(mode="after")
+    def _require_database_credentials(self) -> "Settings":
+        """Fail fast unless we can build a connection URL either way."""
+        if not self.database_url_override and not self.verity_app_password.get_secret_value():
+            raise ValueError("Set DATABASE_URL or VERITY_APP_PASSWORD")
+        return self
+
     @property
     def database_url(self) -> str:
+        if self.database_url_override:
+            return self.database_url_override
         return self._postgres_url(self.verity_app_user, self.verity_app_password)
 
     @property
     def sql_database_url(self) -> str:
+        if self.sql_database_url_override:
+            return self.sql_database_url_override
         return self._postgres_url(self.sql_ro_user, self.sql_ro_password)
 
     def _postgres_url(self, user: str, password: SecretStr) -> str:
         quoted_user = quote(user, safe="")
         quoted_password = quote(password.get_secret_value(), safe="")
+        query = f"?sslmode={quote(self.postgres_sslmode, safe='')}" if self.postgres_sslmode else ""
         return (
             f"postgresql://{quoted_user}:{quoted_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}{query}"
         )
 
     @property

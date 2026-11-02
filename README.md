@@ -177,15 +177,18 @@ rows from `evals/reports/eval.md`. No figures are asserted until then.
 
 ## Deploy on Render
 
-The fastest way to run Verity in production is on [Render](https://render.com)
-using the `render.yaml` blueprint. It provisions all five services
-(PostgreSQL + pgvector, Redis, AI service, API gateway, and web frontend) from
-this GitHub repo.
+The `render.yaml` blueprint deploys the app services to
+[Render](https://render.com)'s free tier: Redis (Key Value), the AI service, the
+API gateway, and the web frontend. PostgreSQL with pgvector is hosted on an
+external managed provider (Neon or Supabase both have free tiers), because free
+Render web services have an ephemeral filesystem and cannot receive private
+network traffic.
 
 ### Prerequisites
 
 - A [Render account](https://render.com/signup)
 - A **Google Gemini API key** from [Google AI Studio](https://aistudio.google.com/)
+- A Postgres database with `pgvector` (Neon/Supabase free tier, or Render Postgres)
 - This repo pushed to GitHub
 
 ### Steps
@@ -202,18 +205,17 @@ this GitHub repo.
    - Open [Render Dashboard](https://dashboard.render.com/)
    - Click **"New +" → "Blueprint"**
    - Connect GitHub and select the `Verity` repository
-   - Render detects `render.yaml` and previews all five services
+   - Render detects `render.yaml` and previews the services
    - Click **"Apply"**
 
 3. **Set required secrets**
-   In the Render dashboard, set `GOOGLE_API_KEY` on the `verity-ai` service
-   (your Google Gemini API key). All other secrets — `JWT_ACCESS_SECRET`,
-   `JWT_REFRESH_SECRET`, `INTERNAL_SERVICE_TOKEN`, database passwords — are
-   auto-generated.
+   Fill the `verity-shared` environment group (Postgres host and the app /
+   read-only role credentials) and set `GOOGLE_API_KEY` on `verity-ai`. JWT
+   secrets and `INTERNAL_SERVICE_TOKEN` are generated automatically.
 
-4. **Run migrations**
-   After all services are healthy, apply the SQL migrations in
-   `infra/postgres/migrations/` against the Postgres service, in filename order.
+4. **Bootstrap the database**
+   Run `./infra/postgres/bootstrap-external.sh` once against the managed database
+   to create the schemas, roles, and migrations. See [`DEPLOY.md`](./DEPLOY.md).
 
 ### Service URLs (after deployment)
 
@@ -223,10 +225,11 @@ this GitHub repo.
 | API gateway | `https://verity-api.onrender.com` |
 | AI service  | `https://verity-ai.onrender.com`  |
 
-The `render.yaml` blueprint wires service URLs between containers automatically
-(`AI_SERVICE_URL`, `POSTGRES_HOST`, `REDIS_URL`, `WEB_ORIGIN`), so no manual
-connection-string copying is required. See [`DEPLOY.md`](./DEPLOY.md) for the
-full deployment reference.
+Free instances cannot receive private-network traffic, so the web app calls the
+API, and the API calls the AI service, over those public `https://` URLs.
+Datastores (Redis, Postgres) are reached over the private network or the public
+internet respectively. See [`DEPLOY.md`](./DEPLOY.md) for the full reference and
+free-tier caveats (cold starts, no object storage).
 
 ## What ships today
 

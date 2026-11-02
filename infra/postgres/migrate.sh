@@ -6,6 +6,8 @@ set -eu
 : "${PGDATABASE:?PGDATABASE is required}"
 : "${PGUSER:?PGUSER is required}"
 
+MIGRATIONS_DIR="${MIGRATIONS_DIR:-/migrations}"
+
 echo "waiting for postgres at ${PGHOST}:${PGPORT:-5432}..."
 until pg_isready -h "$PGHOST" -p "${PGPORT:-5432}" -U "$PGUSER" -d "$PGDATABASE" >/dev/null 2>&1; do
   sleep 1
@@ -18,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.schema_migrations (
 );
 SQL
 
-for file in /migrations/*.sql; do
+for file in "$MIGRATIONS_DIR"/*.sql; do
   [ -e "$file" ] || continue
   name=$(basename "$file")
 

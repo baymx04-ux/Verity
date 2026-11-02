@@ -26,9 +26,18 @@ SELECT format('CREATE ROLE %I LOGIN', :'app_user')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
 \gexec
 
+-- Managed providers (Neon, Supabase) hand you a database owner, not a true
+-- superuser, and only a superuser may alter the SUPERUSER attribute. New roles
+-- never carry these attributes, so only assert them when we actually can.
 SELECT format(
-  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
-  :'app_user', :'app_password'
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L%s',
+  :'app_user',
+  :'app_password',
+  CASE
+    WHEN (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+    THEN ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS'
+    ELSE ''
+  END
 )
 \gexec
 
@@ -37,8 +46,14 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'ro_user')
 \gexec
 
 SELECT format(
-  'ALTER ROLE %I WITH LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',
-  :'ro_user', :'ro_password'
+  'ALTER ROLE %I WITH LOGIN PASSWORD %L%s',
+  :'ro_user',
+  :'ro_password',
+  CASE
+    WHEN (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
+    THEN ' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS'
+    ELSE ''
+  END
 )
 \gexec
 
@@ -102,24 +117,48 @@ GRANT SELECT ON business_ro.v_health TO :"ro_user";
 -- ---------------------------------------------------------------------------
 -- Defense in depth: remove PUBLIC execute on server-level hazards.
 -- The SQL validator also denies these; the database role must not rely on it.
+--
+-- Managed providers (Neon, Supabase, Render Postgres) give you a database
+-- owner rather than a true superuser, so these REVOKEs can fail with
+-- "permission denied for function". That is not fatal: attempting the revoke
+-- is best-effort hardening, and the application-level validator is the primary
+-- control. Skip what we cannot change and keep bootstrapping.
 -- ---------------------------------------------------------------------------
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_sleep(double precision) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_sleep_for(interval) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_sleep_until(timestamp with time zone) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_file(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_file(text, bigint, bigint) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_read_binary_file(text, bigint, bigint) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_ls_dir(text, boolean, boolean) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.lo_import(text) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.lo_import(text, oid) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.lo_export(oid, text) FROM PUBLIC;
--- PG16 note: pg_terminate_backend's only signature is (pid integer,
--- timeout bigint DEFAULT 0); there is no bare (integer) overload anymore.
--- Revoking PUBLIC execute on this signature blocks single-argument calls too.
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_terminate_backend(integer, bigint) FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION pg_catalog.pg_cancel_backend(integer) FROM PUBLIC;
+DO $do$
+DECLARE
+  signature text;
+BEGIN
+  FOREACH signature IN ARRAY ARRAY[
+    'pg_catalog.pg_sleep(double precision)',
+    'pg_catalog.pg_sleep_for(interval)',
+    'pg_catalog.pg_sleep_until(timestamp with time zone)',
+    'pg_catalog.pg_read_file(text)',
+    'pg_catalog.pg_read_file(text, bigint, bigint)',
+    'pg_catalog.pg_read_binary_file(text)',
+    'pg_catalog.pg_read_binary_file(text, bigint, bigint)',
+    'pg_catalog.pg_ls_dir(text)',
+    'pg_catalog.pg_ls_dir(text, boolean, boolean)',
+    'pg_catalog.lo_import(text)',
+    'pg_catalog.lo_import(text, oid)',
+    'pg_catalog.lo_export(oid, text)',
+    -- PG16 note: pg_terminate_backend's only signature is (pid integer,
+    -- timeout bigint DEFAULT 0); there is no bare (integer) overload anymore.
+    -- Revoking PUBLIC execute on this signature blocks single-argument calls.
+    'pg_catalog.pg_terminate_backend(integer, bigint)',
+    'pg_catalog.pg_cancel_backend(integer)'
+  ]
+  LOOP
+    BEGIN
+      EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', signature);
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        RAISE NOTICE 'skipped (not function owner): %', signature;
+      WHEN undefined_function THEN
+        RAISE NOTICE 'skipped (not present on this server): %', signature;
+    END;
+  END LOOP;
+END
+$do$;
 SQL
 
 echo "roles ${VERITY_APP_USER} and ${SQL_RO_USER} are configured"

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Sourced by the nginx image entrypoint BEFORE 20-envsubst-on-templates.sh, so
+# exported values reach the ${API_UPSTREAM} substitution.
+#
+# Render wires API_UPSTREAM from verity-api's RENDER_EXTERNAL_HOSTNAME, which is
+# a bare hostname with no scheme (and may carry a random suffix). Add the scheme
+# here so `proxy_pass` always receives a valid URL, whatever the host looks like.
+case "${API_UPSTREAM:-}" in
+  http://* | https://*) ;;
+  '') ;;
+  *) export API_UPSTREAM="https://${API_UPSTREAM}" ;;
+esac
+
+# docker compose provides its own resolver; default to Docker's embedded DNS.
+export DNS_RESOLVER="${DNS_RESOLVER:-127.0.0.11}"

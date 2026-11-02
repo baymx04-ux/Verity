@@ -5,7 +5,9 @@ import type { AppConfig } from '../config/env';
 import type { Logger } from '../config/logger';
 
 export type DependencyName = 'postgres' | 'redis' | 'minio';
-export type DependencyStatus = 'ok' | 'down';
+// `skipped` means the dependency is intentionally not provisioned (for example
+// the Render blueprint runs without MinIO), so it must not fail the health check.
+export type DependencyStatus = 'ok' | 'down' | 'skipped';
 
 export interface HealthReport {
   status: 'ok' | 'degraded';
@@ -89,15 +91,21 @@ export function createHealthService(config: AppConfig, logger: Logger): HealthCh
       const checks: Array<[DependencyName, () => Promise<void>]> = [
         ['postgres', checkPostgres],
         ['redis', checkRedis],
-        ['minio', checkMinio],
       ];
+
+      // Documents/storage are optional: only probe MinIO when credentials are
+      // configured. Otherwise a deployment without object storage would report
+      // itself unhealthy forever and never pass the platform health check.
+      if (config.minioEnabled) {
+        checks.push(['minio', checkMinio]);
+      }
 
       const results = await Promise.allSettled(checks.map(([, run]) => run()));
 
       const dependencies: Record<DependencyName, DependencyStatus> = {
-        postgres: 'ok',
-        redis: 'ok',
-        minio: 'ok',
+        postgres: 'skipped',
+        redis: 'skipped',
+        minio: 'skipped',
       };
 
       results.forEach((result, index) => {
@@ -118,10 +126,12 @@ export function createHealthService(config: AppConfig, logger: Logger): HealthCh
             },
             'dependency health check failed',
           );
+        } else {
+          dependencies[name] = 'ok';
         }
       });
 
-      const status = Object.values(dependencies).every((value) => value === 'ok')
+      const status = Object.values(dependencies).every((value) => value !== 'down')
         ? 'ok'
         : 'degraded';
 

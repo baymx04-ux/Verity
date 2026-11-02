@@ -15,7 +15,7 @@ from app.core.config import Settings
 
 router = APIRouter(tags=["health"])
 
-DependencyStatus = Literal["ok", "down"]
+DependencyStatus = Literal["ok", "down", "skipped"]
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +54,22 @@ async def check_dependencies(settings: Settings) -> dict[str, DependencyStatus]:
     checks: dict[str, Callable[[Settings], Awaitable[None]]] = {
         "postgres": check_postgres,
         "redis": check_redis,
-        "minio": check_minio,
     }
+
+    # Object storage backs document ingestion only, so treat it as optional:
+    # probe it when credentials are configured, otherwise report "skipped".
+    # A deployment without MinIO must still be able to report healthy.
+    if settings.minio_access_key.strip():
+        checks["minio"] = check_minio
 
     results = await asyncio.gather(
         *(check(settings) for check in checks.values()),
         return_exceptions=True,
     )
 
-    dependencies: dict[str, DependencyStatus] = {}
+    dependencies: dict[str, DependencyStatus] = {name: "skipped" for name in checks}
+    if "minio" not in dependencies:
+        dependencies["minio"] = "skipped"
 
     for name, result in zip(checks.keys(), results, strict=True):
         if result is None:
@@ -81,7 +88,7 @@ async def check_dependencies(settings: Settings) -> dict[str, DependencyStatus]:
 async def health(request: Request) -> JSONResponse:
     settings: Settings = request.app.state.settings
     dependencies = await check_dependencies(settings)
-    status = "ok" if all(value == "ok" for value in dependencies.values()) else "degraded"
+    status = "ok" if all(value != "down" for value in dependencies.values()) else "degraded"
     uptime = int(time.monotonic() - request.app.state.started_at)
 
     return JSONResponse(

@@ -1,16 +1,31 @@
 import { z } from 'zod';
 
+/**
+ * Accepts either a full URL or a bare hostname. Render exposes each service's
+ * public hostname (RENDER_EXTERNAL_HOSTNAME) without a scheme, so the blueprint
+ * can wire services together even when Render appends a suffix to the subdomain.
+ */
+const urlOrHost = z
+  .string()
+  .min(1)
+  .transform((value) => (/^https?:\/\//i.test(value) ? value : `https://${value}`))
+  .pipe(z.string().url());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().positive().default(4000),
-  WEB_ORIGIN: z.string().url().default('http://localhost:5173'),
+  WEB_ORIGIN: urlOrHost.default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),
   POSTGRES_DB: z.string().min(1).default('verity'),
-  VERITY_APP_USER: z.string().min(1),
-  VERITY_APP_PASSWORD: z.string().min(1),
+  // Managed providers require TLS from outside their network; e.g. "require".
+  POSTGRES_SSLMODE: z.string().default(''),
+  // Full connection URL; overrides the POSTGRES_* parts above when set.
+  DATABASE_URL: z.string().min(1).optional(),
+  VERITY_APP_USER: z.string().min(1).optional(),
+  VERITY_APP_PASSWORD: z.string().min(1).optional(),
 
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
 
@@ -21,11 +36,11 @@ const envSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   MINIO_BUCKET: z.string().min(1).default('verity-docs'),
-  MINIO_ACCESS_KEY: z.string().default('verity-minio'),
+  MINIO_ACCESS_KEY: z.string().default(''),
   MINIO_SECRET_KEY: z.string().default('change-me-minio'),
   MINIO_PUBLIC_ENDPOINT: z.string().default('http://localhost:9000'),
 
-  AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
+  AI_SERVICE_URL: urlOrHost.default('http://localhost:8000'),
   INTERNAL_SERVICE_TOKEN: z.string().min(1).optional(),
 
   LLM_PROVIDER: z.enum(['google', 'anthropic', 'openai', 'ollama']).default('google'),
@@ -69,6 +84,8 @@ const envSchema = z.object({
 export type AppConfig = z.infer<typeof envSchema> & {
   databaseUrl: string;
   minioUrl: string;
+  /** False when MinIO is not provisioned, so health/storage can skip it. */
+  minioEnabled: boolean;
   isProduction: boolean;
 };
 
@@ -84,14 +101,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   const values = parsed.data;
   const protocol = values.MINIO_USE_SSL ? 'https' : 'http';
-  const databaseUrl = `postgresql://${encodeURIComponent(values.VERITY_APP_USER)}:${encodeURIComponent(
-    values.VERITY_APP_PASSWORD,
-  )}@${values.POSTGRES_HOST}:${values.POSTGRES_PORT}/${values.POSTGRES_DB}`;
+  const sslmode = values.POSTGRES_SSLMODE
+    ? `?sslmode=${encodeURIComponent(values.POSTGRES_SSLMODE)}`
+    : '';
+
+  // Either a full URL (managed providers hand you one) or the discrete parts.
+  let databaseUrl = values.DATABASE_URL;
+  if (!databaseUrl) {
+    if (!values.VERITY_APP_USER || !values.VERITY_APP_PASSWORD) {
+      throw new Error(
+        'Invalid environment configuration: set DATABASE_URL or both VERITY_APP_USER and VERITY_APP_PASSWORD',
+      );
+    }
+    databaseUrl = `postgresql://${encodeURIComponent(values.VERITY_APP_USER)}:${encodeURIComponent(
+      values.VERITY_APP_PASSWORD,
+    )}@${values.POSTGRES_HOST}:${values.POSTGRES_PORT}/${values.POSTGRES_DB}${sslmode}`;
+  }
 
   return {
     ...values,
     databaseUrl,
     minioUrl: `${protocol}://${values.MINIO_ENDPOINT}:${values.MINIO_PORT}`,
+    minioEnabled: values.MINIO_ACCESS_KEY.trim().length > 0,
     isProduction: values.NODE_ENV === 'production',
   };
 }

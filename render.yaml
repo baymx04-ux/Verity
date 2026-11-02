@@ -1,86 +1,73 @@
-# Render.com blueprint for Verity
-services:
-  # PostgreSQL 16 + pgvector
-  - name: verity-postgres
-    type: web
-    env: docker
-    region: oregon
-    plan: free
-    dockerfilePath: infra/postgres/Dockerfile
+# Render.com blueprint for Verity — free-tier topology.
+#
+#   browser -> verity-web (nginx)  --https-->  verity-api (Node)  --https-->  verity-ai (FastAPI)
+#                                                    |                          |
+#                                                    +---- Render Key Value ----+
+#                                                    +---- external Postgres ---+
+#
+# Why this shape (see DEPLOY.md for the full reasoning):
+#
+#   * Free web services cannot RECEIVE private-network traffic. They can SEND
+#     it. So verity-web -> verity-api and verity-api -> verity-ai have to use
+#     each service's public https:// URL, while Render Key Value (a datastore)
+#     stays on the private network.
+#   * Free web services have an ephemeral filesystem and cannot attach a
+#     persistent disk, so Postgres must live outside this blueprint. Any managed
+#     Postgres with pgvector works (Neon and Supabase both have free tiers).
+#   * Free web services spin down after 15 minutes without traffic; the first
+#     request after that takes about a minute to wake the service.
+#
+# Service-to-service URLs are wired from each service's RENDER_EXTERNAL_HOSTNAME
+# rather than hardcoded "verity-*.onrender.com", so the deployment keeps working
+# when Render appends a suffix to a taken subdomain. The nginx entrypoint and
+# the API config add the https:// scheme.
+
+envVarGroups:
+  # Values shared by verity-api and verity-ai. Enter these once in the Render
+  # dashboard ("Environment Groups"); the ones marked sync: false are prompted
+  # for on first sync.
+  - name: verity-shared
     envVars:
-      - key: POSTGRES_DB
-        value: verity
-      - key: POSTGRES_USER
-        value: postgres
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: VERITY_APP_USER
-        value: verity_app
-      - key: VERITY_APP_PASSWORD
-        generateValue: true
-      - key: SQL_RO_USER
-        value: verity_sql_ro
-      - key: SQL_RO_PASSWORD
+      # Full Postgres connection URLs for the two least-privilege roles, as
+      # created by infra/postgres/bootstrap-external.sh. Use the DIRECT host
+      # (drop "-pooler"): psycopg uses prepared statements, which PgBouncer
+      # transaction pooling does not reliably support.
+      #
+      #   postgresql://verity_app:<password>@<host>/<db>?sslmode=require
+      #   postgresql://verity_sql_ro:<password>@<host>/<db>?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      - key: SQL_DATABASE_URL
+        sync: false
+      # HMAC secret for gateway -> AI calls. It must be IDENTICAL in both
+      # services, so it lives here instead of being generated per service.
+      - key: INTERNAL_SERVICE_TOKEN
         generateValue: true
 
-  # Redis (caching, rate limiting)
+services:
+  # Redis (caching, rate limiting, ingestion queue)
   - name: verity-redis
-    type: redis
+    type: keyvalue
     region: oregon
     plan: free
-    maxmemoryPolicy: allkeys-lru
-    # CIDR blocks only. Empty list = internal connections only (verity-ai,
-    # verity-api can connect over Render's private network).
+    # Internal connections only; free web services can still reach it over the
+    # private network because they are allowed to *send* private traffic.
     ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
 
   # AI service (FastAPI — RAG, embeddings, SQL generation)
   - name: verity-ai
     type: web
-    env: docker
+    runtime: docker
     region: oregon
     plan: free
     dockerfilePath: services/ai/Dockerfile
     envVars:
-      - key: POSTGRES_HOST
-        fromService:
-          name: verity-postgres
-          type: web
-          property: host
-      - key: POSTGRES_PORT
-        value: "5432"
-      - key: POSTGRES_DB
-        value: verity
-      - key: POSTGRES_SUPERUSER
-        value: postgres
-      - key: POSTGRES_PASSWORD
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: POSTGRES_PASSWORD
-      - key: VERITY_APP_USER
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: VERITY_APP_USER
-      - key: VERITY_APP_PASSWORD
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: VERITY_APP_PASSWORD
-      - key: SQL_RO_USER
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: SQL_RO_USER
-      - key: SQL_RO_PASSWORD
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: SQL_RO_PASSWORD
+      - fromGroup: verity-shared
       - key: REDIS_URL
         fromService:
           name: verity-redis
-          type: redis
+          type: keyvalue
           property: connectionString
       - key: LLM_PROVIDER
         value: google
@@ -91,7 +78,7 @@ services:
       - key: EMBEDDING_MODEL
         value: gemini-embedding-001
       - key: EMBEDDING_DIM
-        value: "768"
+        value: '768'
       - key: RERANKER
         value: none
       - key: GOOGLE_API_KEY
@@ -103,79 +90,66 @@ services:
   # API gateway (Express/Node.js)
   - name: verity-api
     type: web
-    env: docker
+    runtime: docker
     region: oregon
     plan: free
     dockerfilePath: apps/api/Dockerfile
     envVars:
-      - key: POSTGRES_HOST
-        fromService:
-          name: verity-postgres
-          type: web
-          property: host
-      - key: POSTGRES_PORT
-        value: "5432"
-      - key: POSTGRES_DB
-        value: verity
-      - key: POSTGRES_SUPERUSER
-        value: postgres
-      - key: POSTGRES_PASSWORD
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: POSTGRES_PASSWORD
-      - key: VERITY_APP_USER
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: VERITY_APP_USER
-      - key: VERITY_APP_PASSWORD
-        fromService:
-          name: verity-postgres
-          type: web
-          envVarKey: VERITY_APP_PASSWORD
+      - fromGroup: verity-shared
       - key: REDIS_URL
         fromService:
           name: verity-redis
-          type: redis
+          type: keyvalue
           property: connectionString
-      # Calls verity-ai over Render's private network (service name resolves
-      # internally; FastAPI listens on port 8000 per its Dockerfile).
+      # Public URL of verity-ai. Free instances cannot receive private traffic,
+      # so the gateway calls the AI service over the public internet. Render
+      # substitutes the service's real hostname (with any suffix); the API
+      # config adds the https:// scheme.
       - key: AI_SERVICE_URL
-        value: http://verity-ai:8000
+        fromService:
+          name: verity-ai
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
-      - key: INTERNAL_SERVICE_TOKEN
-        generateValue: true
-      # Public URL of the web frontend (used for CORS origin checks).
-      # Render's default subdomain for the "verity-web" service. If Render
-      # appends a hash suffix on first deploy, update this value to match
-      # the actual subdomain shown in the dashboard.
+      # Public URL of the web frontend, used for CORS origin checks. Taken from
+      # verity-web's real hostname so a suffixed subdomain still matches.
       - key: WEB_ORIGIN
-        value: https://verity-web.onrender.com
+        fromService:
+          name: verity-web
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      - key: COOKIE_SECURE
+        value: 'true'
       - key: NODE_ENV
         value: production
-    healthCheckPath: /health
+    # The health route is /api/health; /health 404s and fails the check.
+    healthCheckPath: /api/health
 
   # Web frontend (React + Vite, served by nginx)
   - name: verity-web
     type: web
-    env: docker
+    runtime: docker
     region: oregon
     plan: free
     dockerfilePath: apps/web/Dockerfile
     envVars:
       - key: NODE_ENV
         value: production
-      # nginx's API upstream over Render's private network.
+      # nginx resolves this at request time, so a cold/slow API cannot stop the
+      # frontend container from starting. Must be the PUBLIC hostname: free
+      # instances cannot receive private-network traffic. Render substitutes the
+      # API's real hostname (with any suffix); the container entrypoint adds the
+      # https:// scheme.
       - key: API_UPSTREAM
-        value: http://verity-api:4000
-      # Public URL of the API, baked into the frontend at build time.
-      # Render's default subdomain for the "verity-api" service. If Render
-      # appends a hash suffix on first deploy, update this value to match
-      # the actual subdomain shown in the dashboard.
-      - key: VITE_API_URL
-        value: https://verity-api.onrender.com
-    healthCheckPath: /
+        fromService:
+          name: verity-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      # Public DNS, because no private-network names are used here.
+      - key: DNS_RESOLVER
+        value: 1.1.1.1
+    # Static liveness route that does not depend on the API being reachable.
+    healthCheckPath: /healthz
