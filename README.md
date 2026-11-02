@@ -210,8 +210,19 @@ network traffic.
 
 3. **Set required secrets**
    Fill the `verity-shared` environment group (Postgres host and the app /
-   read-only role credentials) and set `GOOGLE_API_KEY` on `verity-ai`. JWT
-   secrets and `INTERNAL_SERVICE_TOKEN` are generated automatically.
+   read-only role credentials) and set `GOOGLE_API_KEY` on `verity-ai`.
+   `INTERNAL_SERVICE_TOKEN` must be **identical** on `verity-api` and
+   `verity-ai` (HMAC signing for gateway→AI calls); it is generated
+   automatically by the blueprint but can be overridden:
+
+   | Service    | Key                    | Source / value                            |
+   | ---------- | ---------------------- | ----------------------------------------- |
+   | verity-api | `INTERNAL_SERVICE_TOKEN` | from `verity-shared` group               |
+   | verity-ai  | `INTERNAL_SERVICE_TOKEN` | same value as above                       |
+   | verity-ai  | `GOOGLE_API_KEY`       | Google Gemini key from AI Studio          |
+
+   JWT secrets (`JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`) are generated
+   automatically on `verity-api`.
 
 4. **Bootstrap the database**
    Run `./infra/postgres/bootstrap-external.sh` once against the managed database
@@ -219,17 +230,24 @@ network traffic.
 
 ### Service URLs (after deployment)
 
-| Service     | URL                               |
-| ----------- | --------------------------------- |
-| Web app     | `https://verity-web.onrender.com` |
-| API gateway | `https://verity-api.onrender.com` |
-| AI service  | `https://verity-ai.onrender.com`  |
+| Service     | URL                                        |
+| ----------- | ------------------------------------------ |
+| Web app     | `https://verity-web-mg1w.onrender.com`     |
+| API gateway | `https://verity-api-dep3.onrender.com`     |
+| AI service  | `https://verity-ai-1d8r.onrender.com`      |
+| Redis       | `verity-redis` (Key Value, free tier)      |
 
 Free instances cannot receive private-network traffic, so the web app calls the
 API, and the API calls the AI service, over those public `https://` URLs.
 Datastores (Redis, Postgres) are reached over the private network or the public
 internet respectively. See [`DEPLOY.md`](./DEPLOY.md) for the full reference and
 free-tier caveats (cold starts, no object storage).
+
+**Object storage:** the Render blueprint does not include MinIO, so document
+upload/ingestion stays disabled on Render (`minio: skipped` in health). Documents
+seed into Neon with `queued` status but cannot be processed into chunks/embeddings
+without an object store reachable by the AI service and an ingestion worker. Text-to-SQL
+over `business_ro` views and general chat work without it.
 
 ## What ships today
 
